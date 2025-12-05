@@ -1,3 +1,9 @@
+// 字段	自动/手动	是否可修改	说明
+// created_at	✅ 自动	❌ 否	创建时自动设置
+// updated_at	✅ 自动	❌ 否	每次更新自动更新
+// order_start_date	✋ 手动	❌ 否	创建时输入，之后不可改
+// order_finish_date	✋ 手动	✅ 是	创建时输入，可通过API修改
+
 import { useState, useEffect } from 'react';
 import {
   Table,
@@ -23,15 +29,19 @@ import {
   DeleteOutlined,
   EyeOutlined,
 } from '@ant-design/icons';
+import { Tooltip } from 'antd';
 import type { ColumnsType } from 'antd/es/table';
 import { ordersApi } from '@/api';
-import { ProductionOrder, OrderItem, CreateOrderRequest } from '@/types';
+import { ProductionOrder, OrderItem } from '@/types';
 import { useAuth } from '@/hooks/useAuth';
 import { hasPermission } from '@/utils/permissions';
 import dayjs from 'dayjs';
 
-const { Title } = Typography;
+const { Title, Text } = Typography;
 const { TextArea } = Input;
+
+// 常规尺码列表（用于矩阵录入）
+const REGULAR_SIZES = ['90', '100', '110', '120', '130', '140', '150', '160'];
 
 export default function OrdersPage() {
   const { user } = useAuth();
@@ -99,15 +109,13 @@ export default function OrdersPage() {
         return;
       }
 
-      const request: CreateOrderRequest = {
-        order: {
-          order_number: values.order_number,
-          style_number: values.style_number,
-          customer_name: values.customer_name || undefined,
-          order_start_date: values.order_start_date ? values.order_start_date.format('YYYY-MM-DD') : undefined,
-          order_finish_date: values.order_finish_date ? values.order_finish_date.format('YYYY-MM-DD') : undefined,
-          note: values.note || undefined,
-        },
+      const request = {
+        order_number: values.order_number,
+        style_number: values.style_number,
+        customer_name: values.customer_name || undefined,
+        order_start_date: values.order_start_date ? values.order_start_date.format('YYYY-MM-DD') : undefined,
+        order_finish_date: values.order_finish_date ? values.order_finish_date.format('YYYY-MM-DD') : undefined,
+        note: values.note || undefined,
         items: allItems,
       };
       
@@ -178,22 +186,24 @@ export default function OrdersPage() {
       render: (text) => text || '-',
     },
     {
-      title: '开始日期',
+      title: (
+        <Tooltip title="客户下单的日期（业务时间）">
+          <span>下单日期</span>
+        </Tooltip>
+      ),
       dataIndex: 'order_start_date',
       key: 'order_start_date',
       render: (text) => text ? dayjs(text).format('YYYY-MM-DD') : '-',
     },
     {
-      title: '完成日期',
+      title: (
+        <Tooltip title="订单完成的日期（业务时间）">
+          <span>完成日期</span>
+        </Tooltip>
+      ),
       dataIndex: 'order_finish_date',
       key: 'order_finish_date',
       render: (text) => text ? dayjs(text).format('YYYY-MM-DD') : '-',
-    },
-    {
-      title: '创建时间',
-      dataIndex: 'created_at',
-      key: 'created_at',
-      render: (text) => dayjs(text).format('YYYY-MM-DD HH:mm'),
     },
     {
       title: '操作',
@@ -302,12 +312,20 @@ export default function OrdersPage() {
           </Form.Item>
           <Row gutter={16}>
             <Col span={12}>
-              <Form.Item name="order_start_date" label="开始日期">
+              <Form.Item 
+                name="order_start_date" 
+                label="下单日期"
+                tooltip="客户下单的日期（业务时间）"
+              >
                 <DatePicker style={{ width: '100%' }} />
               </Form.Item>
             </Col>
             <Col span={12}>
-              <Form.Item name="order_finish_date" label="完成日期">
+              <Form.Item 
+                name="order_finish_date" 
+                label="完成日期"
+                tooltip="订单计划完成的日期（业务时间）"
+              >
                 <DatePicker style={{ width: '100%' }} />
               </Form.Item>
             </Col>
@@ -447,17 +465,23 @@ export default function OrdersPage() {
               <Descriptions.Item label="客户名称">
                 {selectedOrder.customer_name || '-'}
               </Descriptions.Item>
-              <Descriptions.Item label="开始日期">
+              <Descriptions.Item label="下单日期">
                 {selectedOrder.order_start_date ? dayjs(selectedOrder.order_start_date).format('YYYY-MM-DD') : '-'}
               </Descriptions.Item>
               <Descriptions.Item label="完成日期">
                 {selectedOrder.order_finish_date ? dayjs(selectedOrder.order_finish_date).format('YYYY-MM-DD') : '-'}
               </Descriptions.Item>
-              <Descriptions.Item label="创建时间">
-                {dayjs(selectedOrder.created_at).format('YYYY-MM-DD HH:mm')}
-              </Descriptions.Item>
               <Descriptions.Item label="备注" span={2}>
                 {selectedOrder.note || '-'}
+              </Descriptions.Item>
+            </Descriptions>
+            <Divider orientation="left">系统信息</Divider>
+            <Descriptions column={2} bordered style={{ marginBottom: 16 }}>
+              <Descriptions.Item label="录入时间">
+                {dayjs(selectedOrder.created_at).format('YYYY-MM-DD HH:mm')}
+              </Descriptions.Item>
+              <Descriptions.Item label="最后更新时间">
+                {dayjs(selectedOrder.updated_at || selectedOrder.created_at).format('YYYY-MM-DD HH:mm')}
               </Descriptions.Item>
             </Descriptions>
             <Title level={5}>订单明细</Title>

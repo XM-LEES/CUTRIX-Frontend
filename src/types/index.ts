@@ -63,14 +63,12 @@ export interface OrderItem {
 }
 
 export interface CreateOrderRequest {
-  order: {
-    order_number: string;
-    style_number: string;
-    customer_name?: string;
-    order_start_date?: string;
-    order_finish_date?: string;
-    note?: string;
-  };
+  order_number: string;
+  style_number: string;
+  customer_name?: string;
+  order_start_date?: string;
+  order_finish_date?: string;
+  note?: string;
   items: Array<{
     color: string;
     size: string;
