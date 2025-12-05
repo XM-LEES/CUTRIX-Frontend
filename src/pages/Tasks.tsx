@@ -41,31 +41,56 @@ export default function TasksPage() {
   const loadTasks = async () => {
     setLoading(true);
     try {
-      // 1. 加载所有计划
-      const plans = await plansApi.list();
-      
-      // 2. 为每个计划加载版型和任务
-      const plansData = await Promise.all(
-        plans.map(async (plan) => {
-          // 加载版型
-          const layouts = await layoutsApi.listByPlan(plan.plan_id);
-          
-          // 为每个版型加载任务
-          const layoutsWithTasks = await Promise.all(
-            layouts.map(async (layout) => {
-              const tasks = await tasksApi.listByLayout(layout.layout_id);
-              return { ...layout, tasks };
-            })
-          );
+      // 优化：并行加载所有数据，减少请求次数
+      // 1. 并行加载所有计划、所有版型、所有任务
+      const [plans, allTasks] = await Promise.all([
+        plansApi.list(),
+        tasksApi.list(), // 一次性获取所有任务，避免 N+1 查询
+      ]);
 
-          return {
-            ...plan,
-            layouts: layoutsWithTasks,
-          };
-        })
+      // 2. 批量加载所有版型（按计划分组请求）
+      const allLayouts = await Promise.all(
+        plans.map((plan) => layoutsApi.listByPlan(plan.plan_id))
       );
 
-      // 3. 应用筛选
+      // 3. 构建版型ID到版型的映射
+      const layoutMap = new Map<number, CuttingLayout>();
+      allLayouts.flat().forEach((layout) => {
+        layoutMap.set(layout.layout_id, layout);
+      });
+
+      // 4. 构建版型ID到计划ID的映射
+      const layoutToPlanMap = new Map<number, number>();
+      plans.forEach((plan) => {
+        const planLayouts = allLayouts[plans.indexOf(plan)];
+        planLayouts.forEach((layout) => {
+          layoutToPlanMap.set(layout.layout_id, plan.plan_id);
+        });
+      });
+
+      // 5. 按版型分组任务
+      const tasksByLayout = new Map<number, ProductionTask[]>();
+      allTasks.forEach((task) => {
+        const layoutTasks = tasksByLayout.get(task.layout_id) || [];
+        layoutTasks.push(task);
+        tasksByLayout.set(task.layout_id, layoutTasks);
+      });
+
+      // 6. 组织数据结构：计划 -> 版型 -> 任务
+      const plansData = plans.map((plan) => {
+        const planLayouts = allLayouts[plans.indexOf(plan)];
+        const layoutsWithTasks = planLayouts.map((layout) => ({
+          ...layout,
+          tasks: tasksByLayout.get(layout.layout_id) || [],
+        }));
+
+        return {
+          ...plan,
+          layouts: layoutsWithTasks,
+        };
+      });
+
+      // 7. 应用筛选
       let filtered = plansData;
       
       if (planFilter) {
