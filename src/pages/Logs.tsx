@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import {
   Card,
   Form,
@@ -31,21 +31,48 @@ export default function LogsPage() {
   const [voidModalVisible, setVoidModalVisible] = useState(false);
   const [selectedLog, setSelectedLog] = useState<ProductionLog | null>(null);
   const [form] = Form.useForm();
+  const loadingRef = useRef(false); // 防止重复请求
 
   // 兼容大小写字段名
   const userRole = (user?.role || user?.Role) as any;
   const canCreate = hasPermission(userRole, 'log:create');
-  const canVoid = hasPermission(userRole, 'log:void');
 
   useEffect(() => {
-    loadInProgressTasks();
-    loadMyLogs();
+    loadData();
   }, []);
 
+  // 合并加载任务和日志，避免重复请求
+  const loadData = async () => {
+    if (!user) return;
+    if (loadingRef.current) return; // 防止重复请求
+    
+    loadingRef.current = true;
+    setLoading(true);
+    try {
+      // 1. 并发加载任务列表和我的日志（使用新的 API 接口）
+      const [allTasks, myLogs] = await Promise.all([
+        tasksApi.list(),
+        logsApi.listMy().catch(() => []), // 如果接口不存在，返回空数组（向后兼容）
+      ]);
+      
+      // 2. 过滤出进行中的任务（用于提交日志表单）
+      const inProgressTasks = allTasks.filter((task) => task.status === 'in_progress');
+      setTasks(inProgressTasks);
+      
+      // 3. 设置我的日志（后端已按时间倒序排列）
+      setMyLogs(myLogs);
+    } catch (error) {
+      message.error('加载数据失败');
+    } finally {
+      setLoading(false);
+      loadingRef.current = false;
+    }
+  };
+
+  // 保留单独的函数用于刷新任务列表（用于提交日志后刷新）
   const loadInProgressTasks = async () => {
     try {
       const allTasks = await tasksApi.list();
-      // 只显示进行中的任务
       const inProgressTasks = allTasks.filter((task) => task.status === 'in_progress');
       setTasks(inProgressTasks);
     } catch (error) {
@@ -53,36 +80,22 @@ export default function LogsPage() {
     }
   };
 
+  // 保留单独的函数用于刷新日志（用于作废日志后刷新）
   const loadMyLogs = async () => {
     if (!user) return;
+    if (loadingRef.current) return; // 防止重复请求
+    
+    loadingRef.current = true;
     setLoading(true);
     try {
-      // 获取当前用户的所有日志（通过任务）
-      const userId = user.user_id || user.UserID;
-      const userName = user.name || user.Name;
-      const allTasks = await tasksApi.list();
-      const allLogs: ProductionLog[] = [];
-      
-      for (const task of allTasks) {
-        try {
-          const logs = await logsApi.list(task.task_id);
-          // 过滤出当前用户的日志
-          const myTaskLogs = logs.filter(
-            (log) => log.worker_id === userId || log.worker_name === userName
-          );
-          allLogs.push(...myTaskLogs);
-        } catch (error) {
-          // 静默失败
-        }
-      }
-      
-      // 按时间倒序排列
-      allLogs.sort((a, b) => new Date(b.log_time).getTime() - new Date(a.log_time).getTime());
-      setMyLogs(allLogs);
+      // 使用新的 API 接口直接获取我的日志
+      const myLogs = await logsApi.listMy();
+      setMyLogs(myLogs);
     } catch (error) {
       message.error('加载日志列表失败');
     } finally {
       setLoading(false);
+      loadingRef.current = false;
     }
   };
 
@@ -99,8 +112,8 @@ export default function LogsPage() {
       await logsApi.create(request);
       message.success('提交日志成功');
       form.resetFields();
-      loadInProgressTasks();
-      loadMyLogs();
+      // 提交后只需要刷新任务列表和日志
+      await Promise.all([loadInProgressTasks(), loadMyLogs()]);
     } catch (error: any) {
       message.error(error.message || '提交日志失败');
     } finally {
@@ -108,10 +121,10 @@ export default function LogsPage() {
     }
   };
 
-  const handleVoid = (log: ProductionLog) => {
+  const handleVoid = useCallback((log: ProductionLog) => {
     setSelectedLog(log);
     setVoidModalVisible(true);
-  };
+  }, []);
 
   const handleVoidSuccess = () => {
     setVoidModalVisible(false);

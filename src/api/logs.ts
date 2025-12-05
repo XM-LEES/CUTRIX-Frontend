@@ -11,6 +11,14 @@ export const logsApi = {
   },
 
   /**
+   * 获取当前用户的日志列表
+   */
+  listMy: async (): Promise<ProductionLog[]> => {
+    const response = await apiClient.get<ProductionLog[]>('/logs/my');
+    return Array.isArray(response.data) ? response.data : [];
+  },
+
+  /**
    * 创建日志
    */
   create: async (data: CreateLogRequest): Promise<ProductionLog> => {
