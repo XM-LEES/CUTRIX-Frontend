@@ -88,6 +88,22 @@ export default function PlanCreate() {
       // 1. 加载计划信息
       const plan = await plansApi.get(id);
       
+      // 检查计划状态：只有 pending 状态的计划可以编辑
+      if (plan.status !== 'pending') {
+        const statusText = plan.status === 'in_progress' ? '进行中' : 
+                          plan.status === 'completed' ? '已完成' : 
+                          plan.status === 'frozen' ? '已冻结' : plan.status;
+        Modal.warning({
+          title: '无法编辑计划',
+          content: `该计划状态为"${statusText}"，只有"待发布"状态的计划可以编辑。`,
+          okText: '确定',
+          onOk: () => {
+            navigate('/plans');
+          },
+        });
+        return;
+      }
+      
       // 2. 加载订单信息
       const fullOrder = await ordersApi.getFull(plan.order_id);
       setSelectedOrder(fullOrder.order);
@@ -102,7 +118,7 @@ export default function PlanCreate() {
         layouts.map(async (layout) => {
           const [ratios, tasks] = await Promise.all([
             layoutsApi.getRatios(layout.layout_id).catch(() => []),
-            tasksApi.list(layout.layout_id).catch(() => []),
+            tasksApi.listByLayout(layout.layout_id).catch(() => []),
           ]);
 
           // 将尺码比例转换为对象格式
@@ -111,8 +127,12 @@ export default function PlanCreate() {
             ratiosObj[r.size] = r.ratio;
           });
 
-          // 收集所有颜色
-          const colors = Array.from(new Set(tasks.map((t) => t.color)));
+          // 收集所有颜色（过滤掉空值）
+          const colors = Array.from(new Set(
+            tasks
+              .map((t) => t.color)
+              .filter((color) => color && color.trim() !== '')
+          ));
 
           // 获取拉布层数（从第一个任务获取，所有任务应该相同）
           const plannedLayers = tasks.length > 0 ? tasks[0].planned_layers : 0;
@@ -323,7 +343,8 @@ export default function PlanCreate() {
                 }
 
                 // 删除现有任务（重新创建）
-                const existingTasks = await tasksApi.list(layoutId);
+                // 注意：只有 pending 状态的计划才能删除任务，已在 loadPlanData 中检查
+                const existingTasks = await tasksApi.listByLayout(layoutId);
                 for (const task of existingTasks) {
                   await tasksApi.delete(task.task_id);
                 }

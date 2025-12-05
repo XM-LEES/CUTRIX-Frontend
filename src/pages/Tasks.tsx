@@ -1,52 +1,88 @@
 import { useState, useEffect } from 'react';
 import {
-  Table,
-  Button,
-  Space,
   Typography,
   Card,
   message,
   Row,
   Col,
-  Select,
+  Collapse,
+  Table,
+  Empty,
+  Tag,
+  Progress,
 } from 'antd';
-import { ReloadOutlined } from '@ant-design/icons';
-import { tasksApi, logsApi } from '@/api';
-import { ProductionTask, ProductionLog } from '@/types';
-import { useAuth } from '@/hooks/useAuth';
-import { TaskDetailModal, useTaskTableColumns } from '@/components/tasks';
+import { plansApi, layoutsApi, tasksApi } from '@/api';
+import { ProductionPlan, CuttingLayout, ProductionTask } from '@/types';
+import {
+  PlanPanelHeader,
+  LayoutPanelHeader,
+  TaskFilters,
+  calculatePlanProgress,
+  calculateLayoutProgress,
+} from '@/components/tasks';
 
 const { Title } = Typography;
+const { Panel } = Collapse;
+
+interface PlanWithTasks extends ProductionPlan {
+  layouts: Array<CuttingLayout & { tasks: ProductionTask[] }>;
+}
 
 export default function TasksPage() {
-  const { user } = useAuth();
-  const [tasks, setTasks] = useState<ProductionTask[]>([]);
+  const [plansWithTasks, setPlansWithTasks] = useState<PlanWithTasks[]>([]);
   const [loading, setLoading] = useState(false);
-  const [detailModalVisible, setDetailModalVisible] = useState(false);
-  const [selectedTask, setSelectedTask] = useState<ProductionTask | null>(null);
-  const [taskLogs, setTaskLogs] = useState<ProductionLog[]>([]);
-  const [layoutFilter, setLayoutFilter] = useState<number | undefined>(undefined);
   const [statusFilter, setStatusFilter] = useState<string | undefined>(undefined);
+  const [planFilter, setPlanFilter] = useState<number | undefined>(undefined);
 
   useEffect(() => {
     loadTasks();
-  }, [layoutFilter, statusFilter]);
+  }, [statusFilter, planFilter]);
 
   const loadTasks = async () => {
     setLoading(true);
     try {
-      const allTasks = await tasksApi.list();
-      let filtered = allTasks;
+      // 1. 加载所有计划
+      const plans = await plansApi.list();
       
-      if (layoutFilter) {
-        filtered = filtered.filter((task) => task.layout_id === layoutFilter);
+      // 2. 为每个计划加载版型和任务
+      const plansData = await Promise.all(
+        plans.map(async (plan) => {
+          // 加载版型
+          const layouts = await layoutsApi.listByPlan(plan.plan_id);
+          
+          // 为每个版型加载任务
+          const layoutsWithTasks = await Promise.all(
+            layouts.map(async (layout) => {
+              const tasks = await tasksApi.listByLayout(layout.layout_id);
+              return { ...layout, tasks };
+            })
+          );
+
+          return {
+            ...plan,
+            layouts: layoutsWithTasks,
+          };
+        })
+      );
+
+      // 3. 应用筛选
+      let filtered = plansData;
+      
+      if (planFilter) {
+        filtered = filtered.filter((p) => p.plan_id === planFilter);
       }
-      
+
       if (statusFilter) {
-        filtered = filtered.filter((task) => task.status === statusFilter);
+        filtered = filtered.map((plan) => ({
+          ...plan,
+          layouts: plan.layouts.map((layout) => ({
+            ...layout,
+            tasks: layout.tasks.filter((task) => task.status === statusFilter),
+          })).filter((layout) => layout.tasks.length > 0), // 只保留有任务的版型
+        })).filter((plan) => plan.layouts.length > 0); // 只保留有版型的计划
       }
-      
-      setTasks(filtered);
+
+      setPlansWithTasks(filtered);
     } catch (error) {
       message.error('加载任务列表失败');
     } finally {
@@ -54,24 +90,64 @@ export default function TasksPage() {
     }
   };
 
-
-  const handleViewDetail = async (task: ProductionTask) => {
-    try {
-      const [taskDetail, logs] = await Promise.all([
-        tasksApi.get(task.task_id),
-        logsApi.list(task.task_id),
-      ]);
-      setSelectedTask(taskDetail);
-      setTaskLogs(logs);
-      setDetailModalVisible(true);
-    } catch (error) {
-      message.error('加载任务详情失败');
-    }
-  };
-
-  const columns = useTaskTableColumns({
-    onViewDetail: handleViewDetail,
-  });
+  // 任务表格列定义
+  const taskColumns = [
+    {
+      title: '任务ID',
+      dataIndex: 'task_id',
+      key: 'task_id',
+      width: 100,
+    },
+    {
+      title: '颜色',
+      dataIndex: 'color',
+      key: 'color',
+    },
+    {
+      title: '计划层数',
+      dataIndex: 'planned_layers',
+      key: 'planned_layers',
+      width: 100,
+    },
+    {
+      title: '完成层数',
+      dataIndex: 'completed_layers',
+      key: 'completed_layers',
+      width: 100,
+    },
+    {
+      title: '进度',
+      key: 'progress',
+      width: 150,
+      render: (_: any, record: ProductionTask) => {
+        const progress = record.planned_layers > 0
+          ? Math.round((record.completed_layers / record.planned_layers) * 100)
+          : 0;
+        return (
+          <Progress
+            percent={progress}
+            size="small"
+            status={record.status === 'completed' ? 'success' : 'active'}
+          />
+        );
+      },
+    },
+    {
+      title: '状态',
+      dataIndex: 'status',
+      key: 'status',
+      width: 100,
+      render: (status: string) => {
+        const statusMap: Record<string, { color: string; text: string }> = {
+          pending: { color: 'default', text: '待开始' },
+          in_progress: { color: 'processing', text: '进行中' },
+          completed: { color: 'success', text: '已完成' },
+        };
+        const config = statusMap[status] || { color: 'default', text: status };
+        return <Tag color={config.color}>{config.text}</Tag>;
+      },
+    },
+  ];
 
   return (
     <div>
@@ -80,52 +156,79 @@ export default function TasksPage() {
           <Title level={2}>任务管理</Title>
         </Col>
         <Col>
-          <Space>
-            <Select
-              placeholder="筛选版型"
-              allowClear
-              style={{ width: 200 }}
-              onChange={(value) => setLayoutFilter(value)}
-            >
-              {/* 版型选项需要从计划获取，这里先留空 */}
-            </Select>
-            <Select
-              placeholder="筛选状态"
-              allowClear
-              style={{ width: 150 }}
-              onChange={(value) => setStatusFilter(value)}
-            >
-              <Select.Option value="pending">待开始</Select.Option>
-              <Select.Option value="in_progress">进行中</Select.Option>
-              <Select.Option value="completed">已完成</Select.Option>
-            </Select>
-            <Button icon={<ReloadOutlined />} onClick={loadTasks}>
-              刷新
-            </Button>
-          </Space>
+          <TaskFilters
+            plans={plansWithTasks}
+            selectedPlanId={planFilter}
+            selectedStatus={statusFilter}
+            onPlanChange={setPlanFilter}
+            onStatusChange={setStatusFilter}
+            onRefresh={loadTasks}
+          />
         </Col>
       </Row>
 
-      <Card>
-        <Table
-          columns={columns}
-          dataSource={tasks}
-          loading={loading}
-          rowKey="task_id"
-          pagination={{
-            pageSize: 10,
-            showSizeChanger: true,
-            showTotal: (total) => `共 ${total} 条`,
-          }}
-        />
-      </Card>
+      <Card loading={loading}>
+        {plansWithTasks.length === 0 ? (
+          <Empty description="暂无任务数据" />
+        ) : (
+          <Collapse>
+            {plansWithTasks.map((plan) => {
+              const { totalPlanned, totalCompleted, progress } = calculatePlanProgress(plan);
+              const totalTasks = plan.layouts.reduce((sum, layout) => sum + layout.tasks.length, 0);
 
-      <TaskDetailModal
-        open={detailModalVisible}
-        onCancel={() => setDetailModalVisible(false)}
-        task={selectedTask}
-        taskLogs={taskLogs}
-      />
+              return (
+                <Panel
+                  key={plan.plan_id}
+                  header={
+                    <PlanPanelHeader
+                      plan={plan}
+                      totalTasks={totalTasks}
+                      totalPlanned={totalPlanned}
+                      totalCompleted={totalCompleted}
+                      progress={progress}
+                    />
+                  }
+                >
+                  {plan.layouts.length === 0 ? (
+                    <Empty description="该计划暂无版型和任务" />
+                  ) : (
+                    <Collapse ghost>
+                      {plan.layouts.map((layout) => {
+                        const layoutProgress = calculateLayoutProgress(layout.tasks);
+
+                        return (
+                          <Panel
+                            key={layout.layout_id}
+                            header={
+                              <LayoutPanelHeader
+                                layout={layout}
+                                tasks={layout.tasks}
+                                progress={layoutProgress}
+                              />
+                            }
+                          >
+                            {layout.tasks.length === 0 ? (
+                              <Empty description="该版型暂无任务" />
+                            ) : (
+                              <Table
+                                columns={taskColumns}
+                                dataSource={layout.tasks}
+                                rowKey="task_id"
+                                pagination={false}
+                                size="small"
+                              />
+                            )}
+                          </Panel>
+                        );
+                      })}
+                    </Collapse>
+                  )}
+                </Panel>
+              );
+            })}
+          </Collapse>
+        )}
+      </Card>
     </div>
   );
 }
