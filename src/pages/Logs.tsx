@@ -8,23 +8,16 @@ import {
   Table,
   Typography,
   message,
-  Modal,
-  Tag,
-  Space,
   Select,
   Row,
   Col,
 } from 'antd';
-import {
-  ReloadOutlined,
-  CloseCircleOutlined,
-} from '@ant-design/icons';
-import type { ColumnsType } from 'antd/es/table';
+import { ReloadOutlined } from '@ant-design/icons';
 import { logsApi, tasksApi } from '@/api';
 import { ProductionLog, ProductionTask, CreateLogRequest } from '@/types';
 import { useAuth } from '@/hooks/useAuth';
 import { hasPermission } from '@/utils/permissions';
-import dayjs from 'dayjs';
+import { LogVoidModal, useLogTableColumns } from '@/components/logs';
 
 const { Title } = Typography;
 const { TextArea } = Input;
@@ -38,7 +31,6 @@ export default function LogsPage() {
   const [voidModalVisible, setVoidModalVisible] = useState(false);
   const [selectedLog, setSelectedLog] = useState<ProductionLog | null>(null);
   const [form] = Form.useForm();
-  const [voidForm] = Form.useForm();
 
   // 兼容大小写字段名
   const userRole = (user?.role || user?.Role) as any;
@@ -116,83 +108,21 @@ export default function LogsPage() {
     }
   };
 
-  const handleVoid = async (log: ProductionLog) => {
+  const handleVoid = (log: ProductionLog) => {
     setSelectedLog(log);
     setVoidModalVisible(true);
   };
 
-  const handleVoidConfirm = async (values: any) => {
-    if (!selectedLog) return;
-    try {
-      await logsApi.void(selectedLog.log_id, {
-        void_reason: values.void_reason,
-      });
-      message.success('作废日志成功');
-      setVoidModalVisible(false);
-      voidForm.resetFields();
-      loadMyLogs();
-    } catch (error: any) {
-      message.error(error.message || '作废日志失败');
-    }
+  const handleVoidSuccess = () => {
+    setVoidModalVisible(false);
+    setSelectedLog(null);
+    loadMyLogs();
   };
 
-  const columns: ColumnsType<ProductionLog> = [
-    {
-      title: '时间',
-      dataIndex: 'log_time',
-      key: 'log_time',
-      render: (text) => dayjs(text).format('YYYY-MM-DD HH:mm:ss'),
-    },
-    {
-      title: '任务ID',
-      dataIndex: 'task_id',
-      key: 'task_id',
-    },
-    {
-      title: '完成层数',
-      dataIndex: 'layers_completed',
-      key: 'layers_completed',
-    },
-    {
-      title: '备注',
-      dataIndex: 'note',
-      key: 'note',
-      render: (text) => text || '-',
-    },
-    {
-      title: '状态',
-      dataIndex: 'voided',
-      key: 'voided',
-      render: (voided, record) => (
-        <Space>
-          <Tag color={voided ? 'error' : 'success'}>
-            {voided ? '已作废' : '正常'}
-          </Tag>
-          {voided && record.void_reason && (
-            <span style={{ fontSize: '12px', color: '#999' }}>
-              {record.void_reason}
-            </span>
-          )}
-        </Space>
-      ),
-    },
-    {
-      title: '操作',
-      key: 'action',
-      render: (_, record) => (
-        canVoid && !record.voided ? (
-          <Button
-            type="link"
-            danger
-            icon={<CloseCircleOutlined />}
-            onClick={() => handleVoid(record)}
-          >
-            作废
-          </Button>
-        ) : null
-      ),
-    },
-  ];
+  const columns = useLogTableColumns({
+    userRole,
+    onVoid: handleVoid,
+  });
 
   return (
     <div>
@@ -263,43 +193,15 @@ export default function LogsPage() {
         </Col>
       </Row>
 
-      {/* 作废日志模态框 */}
-      <Modal
-        title="作废日志"
+      <LogVoidModal
         open={voidModalVisible}
         onCancel={() => {
           setVoidModalVisible(false);
-          voidForm.resetFields();
+          setSelectedLog(null);
         }}
-        footer={null}
-      >
-        <Form
-          form={voidForm}
-          layout="vertical"
-          onFinish={handleVoidConfirm}
-        >
-          <Form.Item
-            name="void_reason"
-            label="作废原因"
-            rules={[{ required: true, message: '请输入作废原因' }]}
-          >
-            <TextArea rows={4} placeholder="请说明作废原因" />
-          </Form.Item>
-          <Form.Item>
-            <Space>
-              <Button type="primary" htmlType="submit" danger>
-                确认作废
-              </Button>
-              <Button onClick={() => {
-                setVoidModalVisible(false);
-                voidForm.resetFields();
-              }}>
-                取消
-              </Button>
-            </Space>
-          </Form.Item>
-        </Form>
-      </Modal>
+        onSuccess={handleVoidSuccess}
+        log={selectedLog}
+      />
     </div>
   );
 }
