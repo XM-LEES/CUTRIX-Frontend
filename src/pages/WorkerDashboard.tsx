@@ -1,10 +1,11 @@
 import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Card, Progress, Spin, Typography, Row, Tag, Button, Space, Empty } from 'antd';
-import { LogoutOutlined, ReloadOutlined } from '@ant-design/icons';
+import { LogoutOutlined, ReloadOutlined, HistoryOutlined } from '@ant-design/icons';
 import { useAuth } from '@/hooks/useAuth';
-import { plansApi, tasksApi } from '@/api';
+import { plansApi, tasksApi, layoutsApi } from '@/api';
 import type { ProductionPlan, ProductionTask } from '@/types';
+import { WorkerLogsDrawer } from '@/components/logs';
 
 const { Title, Text } = Typography;
 
@@ -22,6 +23,7 @@ export default function WorkerDashboard() {
   const { user, logout } = useAuth();
   const [taskGroups, setTaskGroups] = useState<TaskGroup[]>([]);
   const [loading, setLoading] = useState(true);
+  const [logsDrawerVisible, setLogsDrawerVisible] = useState(false);
 
   useEffect(() => {
     loadTaskGroups();
@@ -32,7 +34,7 @@ export default function WorkerDashboard() {
 
   const loadTaskGroups = async () => {
     try {
-      // 获取所有进行中的计划和任务
+      // 获取所有进行中的计划、版型和任务
       const [plans, tasks] = await Promise.all([
         plansApi.list(),
         tasksApi.list(),
@@ -43,15 +45,20 @@ export default function WorkerDashboard() {
         (p) => p.status === 'in_progress'
       );
 
+      // 获取所有版型（用于关联任务和计划）
+      const allLayouts = await Promise.all(
+        activePlans.map((plan) => layoutsApi.listByPlan(plan.plan_id))
+      );
+      const layoutsMap = new Map<number, number>(); // layout_id -> plan_id
+      allLayouts.flat().forEach((layout) => {
+        layoutsMap.set(layout.layout_id, layout.plan_id);
+      });
+
       // 为每个计划聚合任务数据
       const groups: TaskGroup[] = activePlans.map((plan) => {
-        // 找到属于这个计划的所有任务
+        // 找到属于这个计划的所有任务（通过 layout_id 关联）
         const planTasks = (tasks as ProductionTask[]).filter(
-          (t) => {
-            // 这里需要通过 layout_id 关联到 plan
-            // 由于我们没有直接关联，先简化处理
-            return true; // 后面会优化
-          }
+          (task) => layoutsMap.get(task.layout_id) === plan.plan_id
         );
 
         const total_planned = planTasks.reduce((sum, t) => sum + t.planned_layers, 0);
@@ -93,7 +100,7 @@ export default function WorkerDashboard() {
   if (loading) {
     return (
       <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', height: '100vh' }}>
-        <Spin size="large" tip="加载中..." />
+        <Spin size="large" />
       </div>
     );
   }
@@ -114,6 +121,9 @@ export default function WorkerDashboard() {
               {user?.user_group || user?.UserGroup || '默认组'}
             </Text>
           </div>
+          <Button icon={<HistoryOutlined />} onClick={() => setLogsDrawerVisible(true)}>
+            我的记录
+          </Button>
           <Button icon={<ReloadOutlined />} onClick={loadTaskGroups}>
             刷新
           </Button>
@@ -179,6 +189,11 @@ export default function WorkerDashboard() {
           </div>
         )}
       </main>
+
+      <WorkerLogsDrawer
+        open={logsDrawerVisible}
+        onClose={() => setLogsDrawerVisible(false)}
+      />
     </div>
   );
 }

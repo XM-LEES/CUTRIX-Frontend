@@ -36,5 +36,33 @@ export const logsApi = {
     await apiClient.patch(`/logs/${id}`, data);
     // 204 No Content
   },
+
+  /**
+   * 获取最近作废的日志（用于manager查看）
+   */
+  listRecentVoided: async (limit?: number): Promise<ProductionLog[]> => {
+    const url = limit ? `/logs/recent-voided?limit=${limit}` : '/logs/recent-voided';
+    const response = await apiClient.get<ProductionLog[]>(url);
+    return Array.isArray(response.data) ? response.data : [];
+  },
+
+  /**
+   * 获取所有日志（管理员用），支持筛选和分页
+   */
+  listAll: async (params?: {
+    task_id?: number;
+    worker_id?: number;
+    voided?: boolean;
+    limit?: number;
+    offset?: number;
+  }): Promise<{ logs: ProductionLog[]; total: number; limit: number; offset: number }> => {
+    const response = await apiClient.get<{
+      logs: ProductionLog[];
+      total: number;
+      limit: number;
+      offset: number;
+    }>('/logs', { params });
+    return response.data;
+  },
 };
 

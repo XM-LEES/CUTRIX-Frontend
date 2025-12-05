@@ -28,9 +28,9 @@ const rolePermissionsMap: Record<UserRole, Permission[]> = {
     'order:read',
   ],
   worker: [
-    // 任务查看、日志提交
+    // 任务查看、日志提交和作废
     'task:read',
-    'log:create', 'log:update',
+    'log:create', 'log:update', 'log:void',
     'order:read',
   ],
 };

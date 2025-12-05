@@ -76,9 +76,9 @@ export default function OrdersPage() {
   };
 
   const handleNoteSuccess = () => {
-    setEditModalVisible(false);
+      setEditModalVisible(false);
     setSelectedOrder(null);
-    loadOrders();
+      loadOrders();
   };
 
   const handleDelete = async (order: ProductionOrder) => {

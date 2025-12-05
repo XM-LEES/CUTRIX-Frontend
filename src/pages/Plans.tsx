@@ -139,10 +139,10 @@ export default function PlansPage() {
   };
 
   const handleNoteSuccess = () => {
-    setNoteModalVisible(false);
-    setEditingPlan(null);
-    loadPlans();
-    // 如果当前正在查看详情，刷新详情数据
+      setNoteModalVisible(false);
+      setEditingPlan(null);
+      loadPlans();
+      // 如果当前正在查看详情，刷新详情数据
     if (selectedPlan && editingPlan && selectedPlan.plan_id === editingPlan.plan_id) {
       plansApi.get(editingPlan.plan_id).then((updatedPlan) => {
         setSelectedPlan(updatedPlan);

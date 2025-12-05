@@ -27,6 +27,10 @@ export function RequireRoles({ children, roles, fallback }: RequireRolesProps) {
     if (fallback) {
       return <>{fallback}</>;
     }
+    // 如果是 worker 角色，重定向到工作台
+    if (userRole === 'worker') {
+      return <Navigate to="/worker-dashboard" replace />;
+    }
     return <Navigate to="/" replace />;
   }
 

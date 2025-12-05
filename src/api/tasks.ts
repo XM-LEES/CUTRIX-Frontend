@@ -5,9 +5,16 @@ export const tasksApi = {
   /**
    * 获取任务列表
    */
-  list: async (layoutId?: number): Promise<ProductionTask[]> => {
-    const url = layoutId ? `/layouts/${layoutId}/tasks` : '/tasks';
-    const response = await apiClient.get<ProductionTask[]>(url);
+  list: async (): Promise<ProductionTask[]> => {
+    const response = await apiClient.get<ProductionTask[]>('/tasks');
+    return Array.isArray(response.data) ? response.data : [];
+  },
+
+  /**
+   * 根据版型 ID 获取任务列表
+   */
+  listByLayout: async (layoutId: number): Promise<ProductionTask[]> => {
+    const response = await apiClient.get<ProductionTask[]>(`/layouts/${layoutId}/tasks`);
     return Array.isArray(response.data) ? response.data : [];
   },
 

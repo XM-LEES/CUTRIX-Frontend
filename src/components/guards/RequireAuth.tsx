@@ -26,12 +26,21 @@ export function RequireAuth({ children }: RequireAuthProps) {
     return <Navigate to="/login" replace />;
   }
 
-  // 如果是 worker 角色访问根路径，重定向到 worker 专属页面
+  // 如果是 worker 角色访问后台管理系统路径，重定向到 worker 专属页面
   if (user) {
     const userRole = (user.role || user.Role) as string;
     
-    if (userRole === 'worker' && location.pathname === '/') {
+    if (userRole === 'worker') {
+      // Worker 只能访问工作台相关路径
+      const allowedPaths = ['/worker-dashboard', '/task-operation'];
+      const isWorkerPath = allowedPaths.some(path => 
+        location.pathname === path || location.pathname.startsWith(path + '/')
+      );
+      
+      // 如果不是 worker 允许的路径，重定向到工作台
+      if (!isWorkerPath) {
       return <Navigate to="/worker-dashboard" replace />;
+      }
     }
   }
 

@@ -1,11 +1,12 @@
 import { useState, useEffect, useMemo } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { Button, Spin, Typography, message, Card, Tag, Collapse, Empty } from 'antd';
-import { LeftOutlined } from '@ant-design/icons';
+import { LeftOutlined, HistoryOutlined } from '@ant-design/icons';
 import { useAuth } from '@/hooks/useAuth';
 import { plansApi, layoutsApi, tasksApi, logsApi } from '@/api';
 import NumberKeypad from '@/components/NumberKeypad';
 import type { ProductionPlan, CuttingLayout, ProductionTask } from '@/types';
+import { WorkerLogsDrawer } from '@/components/logs';
 
 const { Title, Text } = Typography;
 const { Panel } = Collapse;
@@ -23,6 +24,7 @@ export default function TaskOperation() {
   const [selectedTask, setSelectedTask] = useState<ProductionTask | null>(null);
   const [inputValue, setInputValue] = useState('0');
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [logsDrawerVisible, setLogsDrawerVisible] = useState(false);
 
   useEffect(() => {
     if (planId) {
@@ -117,7 +119,10 @@ export default function TaskOperation() {
         worker_id: userId,
         worker_name: userName || undefined,
       });
-      message.success('记录提交成功！');
+      message.success({
+        content: '记录提交成功！点击右上角"我的记录"可查看所有提交记录',
+        duration: 4,
+      });
       setInputValue('0');
       // 刷新数据
       if (planId) {
@@ -144,7 +149,7 @@ export default function TaskOperation() {
   if (loading || !currentPlan) {
     return (
       <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', height: '100vh' }}>
-        <Spin size="large" tip="加载中..." />
+        <Spin size="large" />
       </div>
     );
   }
@@ -166,7 +171,14 @@ export default function TaskOperation() {
           </Title>
           <Text type="secondary">计划 ID: {currentPlan.plan_id}</Text>
         </div>
-        <div style={{ width: 120 }} />
+        <Button
+          type="text"
+          icon={<HistoryOutlined />}
+          onClick={() => setLogsDrawerVisible(true)}
+          style={{ fontSize: 16 }}
+        >
+          我的记录
+        </Button>
       </header>
 
       <main style={{ padding: 24, flexGrow: 1, display: 'flex', gap: 24, overflow: 'hidden' }}>
@@ -307,6 +319,11 @@ export default function TaskOperation() {
           )}
         </Card>
       </main>
+
+      <WorkerLogsDrawer
+        open={logsDrawerVisible}
+        onClose={() => setLogsDrawerVisible(false)}
+      />
     </div>
   );
 }
