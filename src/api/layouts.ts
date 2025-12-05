@@ -63,5 +63,21 @@ export const layoutsApi = {
     await apiClient.delete(`/layouts/${id}`);
     // 204 No Content
   },
+
+  /**
+   * 设置版型尺码比例
+   */
+  setRatios: async (id: number, ratios: Record<string, number>): Promise<void> => {
+    await apiClient.post(`/layouts/${id}/ratios`, { ratios });
+    // 204 No Content
+  },
+
+  /**
+   * 获取版型尺码比例
+   */
+  getRatios: async (id: number): Promise<Array<{ ratio_id: number; layout_id: number; size: string; ratio: number }>> => {
+    const response = await apiClient.get(`/layouts/${id}/ratios`);
+    return response.data || [];
+  },
 };
 

@@ -1,4 +1,4 @@
-import { ReactNode } from 'react';
+import { ReactNode, useEffect } from 'react';
 import { Navigate, useLocation } from 'react-router-dom';
 import { useAuth } from '@/hooks/useAuth';
 
@@ -14,9 +14,15 @@ export function RequireAuth({ children }: RequireAuthProps) {
   const { isAuthenticated, user, checkAuth } = useAuth();
   const location = useLocation();
 
+  // 在 useEffect 中检查认证状态，避免在渲染过程中调用 setState
+  useEffect(() => {
+    if (!isAuthenticated) {
+      checkAuth();
+    }
+  }, [isAuthenticated, checkAuth]);
+
   // 检查认证状态
   if (!isAuthenticated) {
-    checkAuth();
     return <Navigate to="/login" replace />;
   }
 

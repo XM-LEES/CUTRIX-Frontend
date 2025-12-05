@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
 import {
   Table,
@@ -7,18 +7,17 @@ import {
   Typography,
   Card,
   Modal,
-  Form,
-  Input,
-  Select,
-  DatePicker,
   message,
   Popconfirm,
   Tag,
   Descriptions,
   Row,
   Col,
-  Tabs,
   Collapse,
+  Input,
+  Progress,
+  Empty,
+  Divider,
 } from 'antd';
 import {
   PlusOutlined,
@@ -27,15 +26,16 @@ import {
   EyeOutlined,
   PlayCircleOutlined,
   StopOutlined,
+  FileTextOutlined,
 } from '@ant-design/icons';
 import type { ColumnsType } from 'antd/es/table';
 import { plansApi, layoutsApi, tasksApi, ordersApi } from '@/api';
-import { ProductionPlan, CuttingLayout, ProductionTask, ProductionOrder } from '@/types';
+import { ProductionPlan, CuttingLayout, ProductionTask } from '@/types';
 import { useAuth } from '@/hooks/useAuth';
 import { hasPermission } from '@/utils/permissions';
 import dayjs from 'dayjs';
 
-const { Title } = Typography;
+const { Title, Text } = Typography;
 const { TextArea } = Input;
 const { Panel } = Collapse;
 
@@ -43,14 +43,16 @@ export default function PlansPage() {
   const navigate = useNavigate();
   const { user } = useAuth();
   const [plans, setPlans] = useState<ProductionPlan[]>([]);
-  const [orders, setOrders] = useState<ProductionOrder[]>([]);
   const [loading, setLoading] = useState(false);
-  const [createModalVisible, setCreateModalVisible] = useState(false);
   const [detailModalVisible, setDetailModalVisible] = useState(false);
   const [selectedPlan, setSelectedPlan] = useState<ProductionPlan | null>(null);
   const [planLayouts, setPlanLayouts] = useState<CuttingLayout[]>([]);
   const [planTasks, setPlanTasks] = useState<ProductionTask[]>([]);
-  const [createForm] = Form.useForm();
+  const [noteModalVisible, setNoteModalVisible] = useState(false);
+  const [editingPlan, setEditingPlan] = useState<ProductionPlan | null>(null);
+  const [noteValue, setNoteValue] = useState<string>('');
+  const [orderItems, setOrderItems] = useState<any[]>([]);
+  const [layoutRatios, setLayoutRatios] = useState<Record<number, Record<string, number>>>({});
 
   // 兼容大小写字段名
   const userRole = (user?.role || user?.Role) as any;
@@ -58,10 +60,10 @@ export default function PlansPage() {
   const canPublish = hasPermission(userRole, 'plan:publish');
   const canFreeze = hasPermission(userRole, 'plan:freeze');
   const canDelete = hasPermission(userRole, 'plan:delete');
+  const canUpdate = hasPermission(userRole, 'plan:update');
 
   useEffect(() => {
     loadPlans();
-    loadOrders();
   }, []);
 
   const loadPlans = async () => {
@@ -76,48 +78,51 @@ export default function PlansPage() {
     }
   };
 
-  const loadOrders = async () => {
-    try {
-      const data = await ordersApi.list();
-      setOrders(data);
-    } catch (error) {
-      // 静默失败
-    }
-  };
-
-  const handleCreate = async (values: any) => {
-    try {
-      await plansApi.create({
-        plan_name: values.plan_name,
-        order_id: values.order_id,
-        note: values.note || undefined,
-        planned_finish_date: values.planned_finish_date
-          ? values.planned_finish_date.format('YYYY-MM-DD')
-          : undefined,
-      });
-      message.success('创建计划成功');
-      setCreateModalVisible(false);
-      createForm.resetFields();
-      loadPlans();
-    } catch (error: any) {
-      message.error(error.message || '创建计划失败');
-    }
-  };
 
   const handleViewDetail = async (plan: ProductionPlan) => {
     try {
-      const [planDetail, layouts, allTasks] = await Promise.all([
+      const [planDetail, layouts, allTasks, orderDetail, fullOrder] = await Promise.all([
         plansApi.get(plan.plan_id),
-        layoutsApi.list(plan.plan_id),
+        layoutsApi.listByPlan(plan.plan_id),
         tasksApi.list(),
+        ordersApi.get(plan.order_id).catch(() => null), // 订单可能不存在，静默失败
+        ordersApi.getFull(plan.order_id).catch(() => null), // 获取订单和订单项
       ]);
-      setSelectedPlan(planDetail);
       setPlanLayouts(layouts);
       // 过滤出属于该计划版型的任务
       const tasks = allTasks.filter((task) =>
         layouts.some((layout) => layout.layout_id === task.layout_id)
       );
       setPlanTasks(tasks);
+      // 保存订单信息到 selectedPlan（用于显示）
+      if (orderDetail) {
+        setSelectedPlan({ ...planDetail, order: orderDetail } as any);
+      } else {
+        setSelectedPlan(planDetail);
+      }
+      // 保存订单项
+      if (fullOrder && fullOrder.items) {
+        setOrderItems(fullOrder.items);
+      } else {
+        setOrderItems([]);
+      }
+      // 加载所有版型的尺码比例
+      const ratiosMap: Record<number, Record<string, number>> = {};
+      await Promise.all(
+        layouts.map(async (layout) => {
+          try {
+            const ratios = await layoutsApi.getRatios(layout.layout_id);
+            const ratiosObj: Record<string, number> = {};
+            ratios.forEach((r) => {
+              ratiosObj[r.size] = r.ratio;
+            });
+            ratiosMap[layout.layout_id] = ratiosObj;
+          } catch (error) {
+            ratiosMap[layout.layout_id] = {};
+          }
+        })
+      );
+      setLayoutRatios(ratiosMap);
       setDetailModalVisible(true);
     } catch (error) {
       message.error('加载计划详情失败');
@@ -154,6 +159,31 @@ export default function PlansPage() {
     }
   };
 
+  const handleEditNote = (plan: ProductionPlan) => {
+    setEditingPlan(plan);
+    setNoteValue(plan.note || '');
+    setNoteModalVisible(true);
+  };
+
+  const handleSaveNote = async () => {
+    if (!editingPlan) return;
+    try {
+      await plansApi.updateNote(editingPlan.plan_id, noteValue || null);
+      message.success('备注更新成功');
+      setNoteModalVisible(false);
+      setEditingPlan(null);
+      setNoteValue('');
+      loadPlans();
+      // 如果当前正在查看详情，刷新详情数据
+      if (selectedPlan && selectedPlan.plan_id === editingPlan.plan_id) {
+        const updatedPlan = await plansApi.get(editingPlan.plan_id);
+        setSelectedPlan(updatedPlan);
+      }
+    } catch (error: any) {
+      message.error(error.message || '更新备注失败');
+    }
+  };
+
   const getStatusTag = (status: string) => {
     const statusMap: Record<string, { color: string; text: string }> = {
       pending: { color: 'default', text: '待发布' },
@@ -163,6 +193,76 @@ export default function PlansPage() {
     };
     const config = statusMap[status] || { color: 'default', text: status };
     return <Tag color={config.color}>{config.text}</Tag>;
+  };
+
+  // 计算订单需求汇总
+  const { orderDemand, orderColors, orderSizes } = useMemo(() => {
+    if (!orderItems || orderItems.length === 0) {
+      return { orderDemand: {}, orderColors: [], orderSizes: [] };
+    }
+
+    const demand: Record<string, Record<string, number>> = {};
+    const colors = new Set<string>();
+    const sizes = new Set<string>();
+
+    orderItems.forEach((item: any) => {
+      if (!demand[item.color]) demand[item.color] = {};
+      demand[item.color][item.size] = item.quantity;
+      colors.add(item.color);
+      sizes.add(item.size);
+    });
+
+    return {
+      orderDemand: demand,
+      orderColors: Array.from(colors),
+      orderSizes: Array.from(sizes).sort((a, b) => {
+        const numA = parseInt(a);
+        const numB = parseInt(b);
+        if (!isNaN(numA) && !isNaN(numB)) return numA - numB;
+        return a.localeCompare(b);
+      }),
+    };
+  }, [orderItems]);
+
+  // 计算计划产量汇总
+  const plannedSupply = useMemo(() => {
+    const supply: Record<string, Record<string, number>> = {};
+    if (!planLayouts || planLayouts.length === 0 || !planTasks || planTasks.length === 0) {
+      return supply;
+    }
+
+    planLayouts.forEach((layout) => {
+      const layoutTasks = planTasks.filter((task) => task.layout_id === layout.layout_id);
+      if (layoutTasks.length === 0) return;
+
+      const ratios = layoutRatios[layout.layout_id] || {};
+
+      layoutTasks.forEach((task) => {
+        if (!supply[task.color]) supply[task.color] = {};
+        Object.entries(ratios).forEach(([size, ratio]) => {
+          if (ratio && ratio > 0) {
+            supply[task.color][size] = (supply[task.color][size] || 0) + task.planned_layers * ratio;
+          }
+        });
+      });
+    });
+
+    return supply;
+  }, [planLayouts, planTasks, layoutRatios]);
+
+  // 汇总表格单元格组件
+  const SummaryCell = ({ planned, required }: { planned: number; required: number }) => {
+    const diff = planned - required;
+    let color = 'inherit';
+    if (diff > 0) color = '#1677ff'; // 超出: 蓝色
+    if (diff < 0) color = '#f5222d'; // 缺少: 红色
+    if (diff === 0 && required > 0) color = '#52c41a'; // 正好: 绿色
+
+    return (
+      <Text style={{ color, fontWeight: 'bold' }}>
+        {planned} / {required}
+      </Text>
+    );
   };
 
   const columns: ColumnsType<ProductionPlan> = [
@@ -206,6 +306,15 @@ export default function PlansPage() {
           >
             详情
           </Button>
+          {canUpdate && record.status === 'pending' && (
+            <Button
+              type="link"
+              icon={<EditOutlined />}
+              onClick={() => navigate(`/plans/create?planId=${record.plan_id}`)}
+            >
+              编辑
+            </Button>
+          )}
           {canPublish && record.status === 'pending' && (
             <Popconfirm
               title="确定要发布这个计划吗？"
@@ -217,6 +326,15 @@ export default function PlansPage() {
                 发布
               </Button>
             </Popconfirm>
+          )}
+          {canUpdate && (record.status === 'in_progress' || record.status === 'completed') && (
+            <Button
+              type="link"
+              icon={<FileTextOutlined />}
+              onClick={() => handleEditNote(record)}
+            >
+              修改备注
+            </Button>
           )}
           {canFreeze && record.status === 'completed' && (
             <Popconfirm
@@ -254,25 +372,15 @@ export default function PlansPage() {
       <Title level={2}>生产计划</Title>
         </Col>
         <Col>
-          <Space>
-            {canCreate && (
-              <Button
-                type="primary"
-                icon={<PlusOutlined />}
-                onClick={() => navigate('/plans/create')}
-              >
-                制定新计划（高级）
-              </Button>
-            )}
-            {canCreate && (
-              <Button
-                icon={<PlusOutlined />}
-                onClick={() => setCreateModalVisible(true)}
-              >
-                快速创建
-              </Button>
-            )}
-          </Space>
+          {canCreate && (
+            <Button
+              type="primary"
+              icon={<PlusOutlined />}
+              onClick={() => navigate('/plans/create')}
+            >
+              创建计划
+            </Button>
+          )}
         </Col>
       </Row>
 
@@ -290,64 +398,6 @@ export default function PlansPage() {
         />
       </Card>
 
-      {/* 创建计划模态框 */}
-      <Modal
-        title="创建计划"
-        open={createModalVisible}
-        onCancel={() => {
-          setCreateModalVisible(false);
-          createForm.resetFields();
-        }}
-        footer={null}
-        width={600}
-      >
-        <Form
-          form={createForm}
-          layout="vertical"
-          onFinish={handleCreate}
-        >
-          <Form.Item
-            name="plan_name"
-            label="计划名称"
-            rules={[{ required: true, message: '请输入计划名称' }]}
-          >
-            <Input placeholder="计划名称" />
-          </Form.Item>
-          <Form.Item
-            name="order_id"
-            label="关联订单"
-            rules={[{ required: true, message: '请选择关联订单' }]}
-          >
-            <Select placeholder="选择订单">
-              {orders.map((order) => (
-                <Select.Option key={order.order_id} value={order.order_id}>
-                  {order.order_number} - {order.style_number}
-                </Select.Option>
-              ))}
-            </Select>
-          </Form.Item>
-          <Form.Item name="planned_finish_date" label="计划完成日期">
-            <DatePicker style={{ width: '100%' }} />
-          </Form.Item>
-          <Form.Item name="note" label="备注">
-            <TextArea rows={3} placeholder="备注信息" />
-          </Form.Item>
-          <Form.Item>
-            <Space>
-              <Button type="primary" htmlType="submit">
-                创建
-              </Button>
-              <Button onClick={() => {
-                setCreateModalVisible(false);
-                createForm.resetFields();
-              }}>
-                取消
-              </Button>
-            </Space>
-          </Form.Item>
-        </Form>
-      </Modal>
-
       {/* 计划详情模态框 */}
       <Modal
         title="计划详情"
@@ -361,6 +411,12 @@ export default function PlansPage() {
             <Descriptions column={2} bordered style={{ marginBottom: 16 }}>
               <Descriptions.Item label="计划名称">{selectedPlan.plan_name}</Descriptions.Item>
               <Descriptions.Item label="订单ID">{selectedPlan.order_id}</Descriptions.Item>
+              {(selectedPlan as any).order && (
+                <>
+                  <Descriptions.Item label="订单号">{(selectedPlan as any).order.order_number}</Descriptions.Item>
+                  <Descriptions.Item label="款号">{(selectedPlan as any).order.style_number}</Descriptions.Item>
+                </>
+              )}
               <Descriptions.Item label="状态">
                 {getStatusTag(selectedPlan.status)}
               </Descriptions.Item>
@@ -378,58 +434,196 @@ export default function PlansPage() {
                 {selectedPlan.note || '-'}
               </Descriptions.Item>
             </Descriptions>
-            <Tabs
-              items={[
-                {
-                  key: 'layouts',
-                  label: '版型列表',
-                  children: (
-                    <Table
-                      dataSource={planLayouts}
-                      rowKey="layout_id"
-                      pagination={false}
-                      columns={[
-                        { title: '版型名称', dataIndex: 'layout_name', key: 'layout_name' },
-                        { title: '备注', dataIndex: 'note', key: 'note', render: (text) => text || '-' },
-                      ]}
-                    />
-                  ),
-                },
-                {
-                  key: 'tasks',
-                  label: '任务列表',
-                  children: (
-                    <Table
-                      dataSource={planTasks}
-                      rowKey="task_id"
-                      pagination={false}
-                      columns={[
-                        { title: '颜色', dataIndex: 'color', key: 'color' },
-                        { title: '计划层数', dataIndex: 'planned_layers', key: 'planned_layers' },
-                        { title: '完成层数', dataIndex: 'completed_layers', key: 'completed_layers' },
-                        {
-                          title: '进度',
-                          key: 'progress',
-                          render: (_, record) => {
-                            const progress = record.planned_layers > 0
-                              ? Math.round((record.completed_layers / record.planned_layers) * 100)
-                              : 0;
-                            return `${progress}%`;
-                          },
-                        },
-                        {
-                          title: '状态',
-                          dataIndex: 'status',
-                          key: 'status',
-                          render: (status) => getStatusTag(status),
-                        },
-                      ]}
-                    />
-                  ),
-                },
-              ]}
-            />
+            {selectedPlan.status === 'pending' && canUpdate && (
+              <div style={{ marginBottom: 16, textAlign: 'right' }}>
+                <Button
+                  type="primary"
+                  icon={<EditOutlined />}
+                  onClick={() => {
+                    setDetailModalVisible(false);
+                    navigate(`/plans/create?planId=${selectedPlan.plan_id}`);
+                  }}
+                >
+                  编辑计划（添加版型和任务）
+                </Button>
+              </div>
+            )}
+            {/* 订单需求与生产计划对比 */}
+            {orderItems.length > 0 && (
+              <>
+                <Divider orientation="left">订单需求与生产计划对比</Divider>
+                <Row gutter={24} style={{ marginBottom: 24 }}>
+                  <Col xs={24} lg={12}>
+                    <Card title="订单需求 (目标)" size="small">
+                      <Table
+                        columns={[
+                          { title: '颜色', dataIndex: 'color', key: 'color', width: 120, fixed: 'left' as const },
+                          ...orderSizes.map((size) => ({
+                            title: size,
+                            dataIndex: size,
+                            key: size,
+                            width: 80,
+                            render: (_: any, record: { color: string }) => orderDemand[record.color]?.[size] || 0,
+                          })),
+                        ]}
+                        dataSource={orderColors.map((color) => ({ key: color, color }))}
+                        pagination={false}
+                        size="small"
+                        bordered
+                        scroll={{ x: 'max-content' }}
+                      />
+                    </Card>
+                  </Col>
+                  <Col xs={24} lg={12}>
+                    <Card title="生产计划汇总 (当前)" size="small">
+                      <Table
+                        columns={[
+                          { title: '颜色', dataIndex: 'color', key: 'color', width: 120, fixed: 'left' as const },
+                          ...orderSizes.map((size) => ({
+                            title: size,
+                            dataIndex: size,
+                            key: size,
+                            width: 100,
+                            render: (_: any, record: { color: string }) => (
+                              <SummaryCell
+                                planned={plannedSupply[record.color]?.[size] || 0}
+                                required={orderDemand[record.color]?.[size] || 0}
+                              />
+                            ),
+                          })),
+                        ]}
+                        dataSource={orderColors.map((color) => ({ key: color, color }))}
+                        pagination={false}
+                        size="small"
+                        bordered
+                        scroll={{ x: 'max-content' }}
+                      />
+                    </Card>
+                  </Col>
+                </Row>
+              </>
+            )}
+
+            {/* 版型和任务层级展示 */}
+            {planLayouts.length === 0 ? (
+              <Empty description="暂无版型" style={{ padding: 40 }} />
+            ) : (
+              <Collapse
+                defaultActiveKey={planLayouts.map((l) => String(l.layout_id))}
+                style={{ marginTop: 16 }}
+              >
+                {planLayouts.map((layout) => {
+                  const layoutTasks = planTasks.filter((task) => task.layout_id === layout.layout_id);
+                  return (
+                    <Panel
+                      key={layout.layout_id}
+                      header={
+                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                          <div>
+                            <Text strong style={{ fontSize: 16 }}>{layout.layout_name}</Text>
+                            {layout.note && (
+                              <Text type="secondary" style={{ marginLeft: 12, fontSize: 12 }}>
+                                {layout.note}
+                              </Text>
+                            )}
+                          </div>
+                          <Tag color="blue">{layoutTasks.length} 个任务</Tag>
+                        </div>
+                      }
+                    >
+                      {layoutTasks.length === 0 ? (
+                        <Empty description="该版型暂无任务" image={Empty.PRESENTED_IMAGE_SIMPLE} />
+                      ) : (
+                        <Table
+                          dataSource={layoutTasks}
+                          rowKey="task_id"
+                          pagination={false}
+                          size="small"
+                          columns={[
+                            {
+                              title: '颜色',
+                              dataIndex: 'color',
+                              key: 'color',
+                              width: 100,
+                              render: (color) => <Tag color="purple">{color}</Tag>,
+                            },
+                            {
+                              title: '计划层数',
+                              dataIndex: 'planned_layers',
+                              key: 'planned_layers',
+                              width: 100,
+                              align: 'center' as const,
+                            },
+                            {
+                              title: '完成层数',
+                              dataIndex: 'completed_layers',
+                              key: 'completed_layers',
+                              width: 100,
+                              align: 'center' as const,
+                            },
+                            {
+                              title: '进度',
+                              key: 'progress',
+                              width: 200,
+                              render: (_, record) => {
+                                const progress = record.planned_layers > 0
+                                  ? Math.round((record.completed_layers / record.planned_layers) * 100)
+                                  : 0;
+                                return (
+                                  <Progress
+                                    percent={progress}
+                                    size="small"
+                                    status={record.status === 'completed' ? 'success' : 'active'}
+                                  />
+                                );
+                              },
+                            },
+                            {
+                              title: '状态',
+                              dataIndex: 'status',
+                              key: 'status',
+                              width: 100,
+                              render: (status) => getStatusTag(status),
+                            },
+                          ]}
+                        />
+                      )}
+                    </Panel>
+                  );
+                })}
+              </Collapse>
+            )}
           </>
+        )}
+      </Modal>
+
+      {/* 修改备注模态框 */}
+      <Modal
+        title="修改计划备注"
+        open={noteModalVisible}
+        onOk={handleSaveNote}
+        onCancel={() => {
+          setNoteModalVisible(false);
+          setEditingPlan(null);
+          setNoteValue('');
+        }}
+        okText="保存"
+        cancelText="取消"
+      >
+        {editingPlan && (
+          <div>
+            <Text type="secondary" style={{ display: 'block', marginBottom: 8 }}>
+              计划：{editingPlan.plan_name}
+            </Text>
+            <TextArea
+              rows={4}
+              value={noteValue}
+              onChange={(e) => setNoteValue(e.target.value)}
+              placeholder="请输入备注信息（可为空）"
+              maxLength={500}
+              showCount
+            />
+          </div>
         )}
       </Modal>
     </div>

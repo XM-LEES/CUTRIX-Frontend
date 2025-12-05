@@ -286,7 +286,11 @@ export default function OrdersPage() {
         }}
         footer={null}
         width={1100}
-        destroyOnClose
+        destroyOnHidden
+        afterClose={() => {
+          createForm.resetFields();
+          createForm.setFieldsValue({ matrix: [{}], special_items: [] });
+        }}
       >
         <Form
           form={createForm}
@@ -335,7 +339,7 @@ export default function OrdersPage() {
           </Form.Item>
 
           <Divider orientation="left">常规尺码批量录入</Divider>
-          <Form.List name="matrix" initialValue={[{}]}>
+          <Form.List name="matrix">
             {(fields, { add, remove }) => (
               <>
                 <Row gutter={8} style={{ marginBottom: 8, color: 'gray' }}>

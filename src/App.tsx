@@ -61,23 +61,23 @@ function App() {
               </RequireAuth>
             }
           >
-            <Route index element={<Dashboard />} />
-            <Route
-              path="orders"
-              element={
-                <RequirePermission permission="order:read">
-                  <OrdersPage />
-                </RequirePermission>
-              }
-            />
-            <Route
-              path="plans"
-              element={
-                <RequirePermission permission="plan:read">
-                  <PlansPage />
-                </RequirePermission>
-              }
-            />
+                    <Route index element={<Dashboard />} />
+                    <Route
+                      path="orders"
+                      element={
+                        <RequirePermission permission="order:read">
+                          <OrdersPage />
+                        </RequirePermission>
+                      }
+                    />
+                    <Route
+                      path="plans"
+                      element={
+                        <RequirePermission permission="plan:read">
+                          <PlansPage />
+                        </RequirePermission>
+                      }
+                    />
             <Route
               path="plans/create"
               element={
@@ -86,14 +86,14 @@ function App() {
                 </RequirePermission>
               }
             />
-            <Route
-              path="tasks"
-              element={
-                <RequirePermission permission="task:read">
-                  <TasksPage />
-                </RequirePermission>
-              }
-            />
+                    <Route
+                      path="tasks"
+                      element={
+                        <RequirePermission permission="task:read">
+                          <TasksPage />
+                        </RequirePermission>
+                      }
+                    />
             <Route
               path="logs"
               element={
@@ -102,14 +102,14 @@ function App() {
                 </RequirePermission>
               }
             />
-            <Route
-              path="users"
-              element={
-                <RequireRoles roles={['admin', 'manager']}>
-                  <UsersPage />
-                </RequireRoles>
-              }
-            />
+                    <Route
+                      path="users"
+                      element={
+                        <RequireRoles roles={['admin', 'manager']}>
+                          <UsersPage />
+                        </RequireRoles>
+                      }
+                    />
           </Route>
 
           {/* 默认重定向 */}

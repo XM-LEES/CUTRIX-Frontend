@@ -173,10 +173,25 @@ apiClient.interceptors.response.use(
     }
     
     // 其他错误
-    const errorMessage = error.response?.data?.error || error.response?.data?.message || error.message || '请求失败';
+    // 优先使用 message 字段（包含中文错误信息），如果没有则使用 error 字段
+    let errorMessage = error.response?.data?.message || error.response?.data?.error || error.message || '请求失败';
+    
+    // 清理 SQLSTATE 等技术信息，只保留用户友好的错误消息
+    if (errorMessage.includes('(SQLSTATE')) {
+      errorMessage = errorMessage.split('(SQLSTATE')[0].trim();
+    }
+    
     // 避免重复显示错误（某些错误可能已经在业务层处理）
+    // 对于 500 错误，如果已经有 message 字段，让业务层处理，拦截器不显示
     if (error.response?.status !== 401 && error.response?.status !== 403 && error.response?.status !== 404) {
-      message.error(errorMessage);
+      // 如果错误消息是 "internal_error"，说明没有具体的错误信息，让业务层处理
+      if (error.response?.data?.message && error.response.data.message !== 'internal_error') {
+        // 有具体的错误消息，让业务层处理，拦截器不显示
+        // 这样避免重复显示
+      } else if (!error.response?.data?.message) {
+        // 没有 message 字段，拦截器显示通用错误
+        message.error(errorMessage);
+      }
     }
     
     return Promise.reject(error);

@@ -113,10 +113,6 @@ export interface CreateLayoutRequest {
   plan_id: number;
   layout_name: string;
   note?: string;
-  ratios: Array<{
-    size: string;
-    ratio: number;
-  }>;
 }
 
 // ========== 任务相关 ==========
