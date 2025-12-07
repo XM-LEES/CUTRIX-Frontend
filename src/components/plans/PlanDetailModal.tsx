@@ -3,15 +3,10 @@ import {
   Modal,
   Descriptions,
   Button,
-  Row,
-  Col,
   Divider,
   Card,
   Table,
-  Collapse,
   Empty,
-  Tag,
-  Progress,
   Typography,
 } from 'antd';
 import { EditOutlined } from '@ant-design/icons';
@@ -21,7 +16,6 @@ import { PlanStatusTag } from './PlanStatusTag';
 import dayjs from 'dayjs';
 import { useMemo } from 'react';
 
-const { Panel } = Collapse;
 const { Text } = Typography;
 
 interface PlanDetailModalProps {
@@ -38,15 +32,20 @@ interface PlanDetailModalProps {
 // 汇总表格单元格组件
 const SummaryCell = ({ planned, required }: { planned: number; required: number }) => {
   const diff = planned - required;
-  let color = 'inherit';
-  if (diff > 0) color = '#1677ff'; // 超出: 蓝色
-  if (diff < 0) color = '#f5222d'; // 缺少: 红色
-  if (diff === 0 && required > 0) color = '#52c41a'; // 正好: 绿色
+  let plannedColor = '#000000'; // 默认黑色
+  if (diff >= 0 && required > 0) plannedColor = '#52c41a'; // 满足: 绿色
+  if (diff < 0) plannedColor = '#f5222d'; // 缺少: 红色
 
   return (
-    <Text style={{ color, fontWeight: 'bold' }}>
-      {planned} / {required}
-    </Text>
+    <span>
+      <Text style={{ color: '#000000' }}>
+        {required}
+      </Text>
+      <Text style={{ color: '#000000', margin: '0 4px' }}>/</Text>
+      <Text style={{ color: plannedColor, fontWeight: 'bold' }}>
+        {planned}
+      </Text>
+    </span>
   );
 };
 
@@ -118,6 +117,53 @@ export default function PlanDetailModal({
     return supply;
   }, [planLayouts, planTasks, layoutRatios]);
 
+  // 构建版型详细信息表格数据（类似Excel第二部分）
+  const layoutDetailData = useMemo(() => {
+    if (!planLayouts || planLayouts.length === 0 || !planTasks || planTasks.length === 0) {
+      return [];
+    }
+
+    const data: Array<{
+      key: string;
+      color: string;
+      layout_name: string;
+      layout_id: number;
+      [size: string]: any;
+    }> = [];
+
+    planLayouts.forEach((layout) => {
+      const layoutTasks = planTasks.filter((task) => task.layout_id === layout.layout_id);
+      if (layoutTasks.length === 0) return;
+
+      const ratios = layoutRatios[layout.layout_id] || {};
+
+      // 每个颜色一行
+      layoutTasks.forEach((task) => {
+        const row: any = {
+          key: `${layout.layout_id}-${task.color}`,
+          color: task.color,
+          layout_name: layout.layout_name,
+          layout_id: layout.layout_id,
+        };
+
+        // 添加各尺码比例
+        orderSizes.forEach((size) => {
+          row[size] = ratios[size] || 0;
+        });
+
+        // 计算合计（所有尺码比例之和）
+        const total = orderSizes.reduce((sum, size) => {
+          return sum + (ratios[size] || 0);
+        }, 0);
+        row.total = total;
+
+        data.push(row);
+      });
+    });
+
+    return data;
+  }, [planLayouts, planTasks, layoutRatios, orderSizes]);
+
   if (!plan) return null;
 
   return (
@@ -168,150 +214,172 @@ export default function PlanDetailModal({
           </Button>
         </div>
       )}
-      {/* 订单需求与生产计划对比 */}
+      {/* 订单需求与生产计划对比（合并为一个表格） */}
       {orderItems.length > 0 && (
         <>
           <Divider orientation="left">订单需求与生产计划对比</Divider>
-          <Row gutter={24} style={{ marginBottom: 24 }}>
-            <Col xs={24} lg={12}>
-              <Card title="订单需求 (目标)" size="small">
-                <Table
-                  columns={[
-                    { title: '颜色', dataIndex: 'color', key: 'color', width: 120, fixed: 'left' as const },
-                    ...orderSizes.map((size) => ({
-                      title: size,
-                      dataIndex: size,
-                      key: size,
-                      width: 80,
-                      render: (_: any, record: { color: string }) => orderDemand[record.color]?.[size] || 0,
-                    })),
-                  ]}
-                  dataSource={orderColors.map((color) => ({ key: color, color }))}
-                  pagination={false}
-                  size="small"
-                  bordered
-                  scroll={{ x: 'max-content' }}
-                />
-              </Card>
-            </Col>
-            <Col xs={24} lg={12}>
-              <Card title="生产计划汇总 (当前)" size="small">
-                <Table
-                  columns={[
-                    { title: '颜色', dataIndex: 'color', key: 'color', width: 120, fixed: 'left' as const },
-                    ...orderSizes.map((size) => ({
-                      title: size,
-                      dataIndex: size,
-                      key: size,
-                      width: 100,
-                      render: (_: any, record: { color: string }) => (
+            <Card 
+            extra={
+                <Text type="secondary" style={{ fontSize: 12 }}>
+                 格式：<Text style={{ fontWeight: 'bold' }}> 需求数量 / 计划数量</Text> | 
+                 <Text style={{ color: '#52c41a', fontWeight: 'bold' }}> 绿色=满足 </Text>
+                 <Text style={{ color: '#f5222d', fontWeight: 'bold' }}> 红色=不足</Text>
+               </Text>
+            }
+          >
+            <Table
+              columns={[
+                { 
+                  title: '颜色', 
+                  dataIndex: 'color', 
+                  key: 'color', 
+                  width: 120, 
+                  fixed: 'left' as const 
+                },
+                ...orderSizes.map((size) => ({
+                  title: size,
+                  dataIndex: size,
+                  key: size,
+                  width: 100,
+                  align: 'center' as const,
+                  render: (_: any, record: { color: string }) => (
+                    <SummaryCell
+                      planned={plannedSupply[record.color]?.[size] || 0}
+                      required={orderDemand[record.color]?.[size] || 0}
+                    />
+                  ),
+                })),
+                {
+                  title: '合计',
+                  key: 'total',
+                  width: 120,
+                  align: 'center' as const,
+                  fixed: 'right' as const,
+                  render: (_: any, record: { color: string }) => {
+                    const totalPlanned = orderSizes.reduce(
+                      (sum, size) => sum + (plannedSupply[record.color]?.[size] || 0),
+                      0
+                    );
+                    const totalRequired = orderSizes.reduce(
+                      (sum, size) => sum + (orderDemand[record.color]?.[size] || 0),
+                      0
+                    );
+                    return (
+                      <SummaryCell
+                        planned={totalPlanned}
+                        required={totalRequired}
+                      />
+                    );
+                  },
+                },
+              ]}
+              dataSource={orderColors.map((color) => ({ key: color, color }))}
+              pagination={false}
+              size="small"
+              bordered
+              scroll={{ x: 'max-content' }}
+              summary={() => {
+                // 计算合计行
+                const totalPlannedBySize: Record<string, number> = {};
+                const totalRequiredBySize: Record<string, number> = {};
+                let totalPlannedAll = 0;
+                let totalRequiredAll = 0;
+
+                orderSizes.forEach((size) => {
+                  totalPlannedBySize[size] = orderColors.reduce(
+                    (sum, color) => sum + (plannedSupply[color]?.[size] || 0),
+                    0
+                  );
+                  totalRequiredBySize[size] = orderColors.reduce(
+                    (sum, color) => sum + (orderDemand[color]?.[size] || 0),
+                    0
+                  );
+                  totalPlannedAll += totalPlannedBySize[size];
+                  totalRequiredAll += totalRequiredBySize[size];
+                });
+
+                return (
+                  <Table.Summary fixed>
+                    <Table.Summary.Row>
+                      <Table.Summary.Cell index={0}>
+                        <Text strong>合计</Text>
+                      </Table.Summary.Cell>
+                      {orderSizes.map((size) => (
+                        <Table.Summary.Cell 
+                          index={orderSizes.indexOf(size) + 1} 
+                          key={size}
+                          align="center"
+                        >
+                          <SummaryCell
+                            planned={totalPlannedBySize[size]}
+                            required={totalRequiredBySize[size]}
+                          />
+                        </Table.Summary.Cell>
+                      ))}
+                      <Table.Summary.Cell index={orderSizes.length + 1} align="center">
                         <SummaryCell
-                          planned={plannedSupply[record.color]?.[size] || 0}
-                          required={orderDemand[record.color]?.[size] || 0}
+                          planned={totalPlannedAll}
+                          required={totalRequiredAll}
                         />
-                      ),
-                    })),
-                  ]}
-                  dataSource={orderColors.map((color) => ({ key: color, color }))}
-                  pagination={false}
-                  size="small"
-                  bordered
-                  scroll={{ x: 'max-content' }}
-                />
-              </Card>
-            </Col>
-          </Row>
+                      </Table.Summary.Cell>
+                    </Table.Summary.Row>
+                  </Table.Summary>
+                );
+              }}
+            />
+          </Card>
         </>
       )}
 
-      {/* 版型和任务层级展示 */}
+      {/* 版型详细信息表格（类似Excel第二部分） */}
       {planLayouts.length === 0 ? (
         <Empty description="暂无版型" style={{ padding: 40 }} />
       ) : (
-        <Collapse
-          defaultActiveKey={planLayouts.map((l) => String(l.layout_id))}
-          style={{ marginTop: 16 }}
-        >
-          {planLayouts.map((layout) => {
-            const layoutTasks = planTasks.filter((task) => task.layout_id === layout.layout_id);
-            return (
-              <Panel
-                key={layout.layout_id}
-                header={
-                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                    <div>
-                      <Text strong style={{ fontSize: 16 }}>{layout.layout_name}</Text>
-                      {layout.note && (
-                        <Text type="secondary" style={{ marginLeft: 12, fontSize: 12 }}>
-                          {layout.note}
-                        </Text>
-                      )}
-                    </div>
-                    <Tag color="blue">{layoutTasks.length} 个任务</Tag>
-                  </div>
-                }
-              >
-                {layoutTasks.length === 0 ? (
-                  <Empty description="该版型暂无任务" image={Empty.PRESENTED_IMAGE_SIMPLE} />
-                ) : (
-                  <Table
-                    dataSource={layoutTasks}
-                    rowKey="task_id"
-                    pagination={false}
-                    size="small"
-                    columns={[
-                      {
-                        title: '颜色',
-                        dataIndex: 'color',
-                        key: 'color',
-                        width: 100,
-                        render: (color) => <Tag color="purple">{color}</Tag>,
-                      },
-                      {
-                        title: '计划层数',
-                        dataIndex: 'planned_layers',
-                        key: 'planned_layers',
-                        width: 100,
-                        align: 'center' as const,
-                      },
-                      {
-                        title: '完成层数',
-                        dataIndex: 'completed_layers',
-                        key: 'completed_layers',
-                        width: 100,
-                        align: 'center' as const,
-                      },
-                      {
-                        title: '进度',
-                        key: 'progress',
-                        width: 200,
-                        render: (_, record) => {
-                          const progress = record.planned_layers > 0
-                            ? Math.round((record.completed_layers / record.planned_layers) * 100)
-                            : 0;
-                          return (
-                            <Progress
-                              percent={progress}
-                              size="small"
-                              status={record.status === 'completed' ? 'success' : 'active'}
-                            />
-                          );
-                        },
-                      },
-                      {
-                        title: '状态',
-                        dataIndex: 'status',
-                        key: 'status',
-                        width: 100,
-                        render: (status) => <PlanStatusTag status={status} />,
-                      },
-                    ]}
-                  />
-                )}
-              </Panel>
-            );
-          })}
-        </Collapse>
+        <>
+          <Divider orientation="left">版型详细信息</Divider>
+          <Card size="small">
+            <Table
+              dataSource={layoutDetailData}
+              rowKey="key"
+              pagination={false}
+              size="small"
+              bordered
+              scroll={{ x: 'max-content' }}
+              columns={[
+                {
+                  title: '颜色',
+                  dataIndex: 'color',
+                  key: 'color',
+                  width: 100,
+                  fixed: 'left' as const,
+                },
+                {
+                  title: '版长',
+                  dataIndex: 'layout_name',
+                  key: 'layout_name',
+                  width: 120,
+                  fixed: 'left' as const,
+                },
+                ...orderSizes.map((size) => ({
+                  title: size,
+                  dataIndex: size,
+                  key: size,
+                  width: 80,
+                  align: 'center' as const,
+                  render: (value: number) => value || 0,
+                })),
+                {
+                  title: '合计',
+                  dataIndex: 'total',
+                  key: 'total',
+                  width: 100,
+                  align: 'center' as const,
+                  render: (value: number) => <Text strong>{value || 0}</Text>,
+                },
+              ]}
+            />
+          </Card>
+        </>
       )}
     </Modal>
   );
