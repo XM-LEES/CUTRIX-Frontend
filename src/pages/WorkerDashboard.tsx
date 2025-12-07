@@ -34,9 +34,10 @@ export default function WorkerDashboard() {
 
   const loadTaskGroups = async () => {
     try {
-      // 获取所有进行中的计划、版型和任务
-      const [plans, tasks] = await Promise.all([
+      // 优化：并行批量获取所有数据，减少请求次数
+      const [plans, allLayouts, tasks] = await Promise.all([
         plansApi.list(),
+        layoutsApi.list(), // 一次性获取所有版型
         tasksApi.list(),
       ]);
 
@@ -45,12 +46,9 @@ export default function WorkerDashboard() {
         (p) => p.status === 'in_progress'
       );
 
-      // 获取所有版型（用于关联任务和计划）
-      const allLayouts = await Promise.all(
-        activePlans.map((plan) => layoutsApi.listByPlan(plan.plan_id))
-      );
+      // 构建版型ID到计划ID的映射
       const layoutsMap = new Map<number, number>(); // layout_id -> plan_id
-      allLayouts.flat().forEach((layout) => {
+      allLayouts.forEach((layout) => {
         layoutsMap.set(layout.layout_id, layout.plan_id);
       });
 

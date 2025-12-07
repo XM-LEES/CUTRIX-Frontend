@@ -35,22 +35,26 @@ export default function TaskOperation() {
   const loadPlanData = async (id: number) => {
     try {
       setLoading(true);
-      // 获取计划详情
-      const plan = await plansApi.get(id);
+      // 优化：并行批量获取数据，减少请求次数
+      const [plan, layouts, allTasks] = await Promise.all([
+        plansApi.get(id),
+        layoutsApi.listByPlan(id),
+        tasksApi.list(), // 一次性获取所有任务
+      ]);
       
-      // 获取该计划的所有版型
-      const layouts = await layoutsApi.listByPlan(id);
+      // 按版型分组任务
+      const tasksByLayout = new Map<number, ProductionTask[]>();
+      allTasks.forEach((task) => {
+        const layoutTasks = tasksByLayout.get(task.layout_id) || [];
+        layoutTasks.push(task);
+        tasksByLayout.set(task.layout_id, layoutTasks);
+      });
       
-      // 为每个版型获取任务
-      const layoutsWithTasks = await Promise.all(
-        layouts.map(async (layout) => {
-          const tasks = await tasksApi.listByLayout(layout.layout_id);
-          return {
-            ...layout,
-            tasks,
-          };
-        })
-      );
+      // 为每个版型关联任务
+      const layoutsWithTasks = layouts.map((layout) => ({
+        ...layout,
+        tasks: tasksByLayout.get(layout.layout_id) || [],
+      }));
 
       setCurrentPlan({
         ...plan,

@@ -79,5 +79,13 @@ export const layoutsApi = {
     const response = await apiClient.get(`/layouts/${id}/ratios`);
     return response.data || [];
   },
+
+  /**
+   * 批量获取多个版型的尺码比例
+   */
+  getRatiosBatch: async (layoutIds: number[]): Promise<Record<number, Array<{ ratio_id: number; layout_id: number; size: string; ratio: number }>>> => {
+    const response = await apiClient.post(`/layouts/ratios/batch`, { layout_ids: layoutIds });
+    return response.data || {};
+  },
 };
 

@@ -80,22 +80,18 @@ export default function PlansPage() {
       } else {
         setOrderItems([]);
       }
-      // 加载所有版型的尺码比例
+      // 优化：批量加载所有版型的尺码比例
+      const layoutIds = layouts.map((l) => l.layout_id);
+      const ratiosBatch = await layoutsApi.getRatiosBatch(layoutIds).catch(() => ({}));
       const ratiosMap: Record<number, Record<string, number>> = {};
-      await Promise.all(
-        layouts.map(async (layout) => {
-          try {
-            const ratios = await layoutsApi.getRatios(layout.layout_id);
-            const ratiosObj: Record<string, number> = {};
-            ratios.forEach((r) => {
-              ratiosObj[r.size] = r.ratio;
-            });
-            ratiosMap[layout.layout_id] = ratiosObj;
-          } catch (error) {
-            ratiosMap[layout.layout_id] = {};
-          }
-        })
-      );
+      layouts.forEach((layout) => {
+        const ratios = ratiosBatch[layout.layout_id] || [];
+        const ratiosObj: Record<string, number> = {};
+        ratios.forEach((r) => {
+          ratiosObj[r.size] = r.ratio;
+        });
+        ratiosMap[layout.layout_id] = ratiosObj;
+      });
       setLayoutRatios(ratiosMap);
       setDetailModalVisible(true);
     } catch (error) {
