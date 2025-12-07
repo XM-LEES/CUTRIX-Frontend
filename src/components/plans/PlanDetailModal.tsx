@@ -61,6 +61,17 @@ export default function PlanDetailModal({
 }: PlanDetailModalProps) {
   const navigate = useNavigate();
   const canUpdate = hasPermission(userRole, 'plan:update');
+  
+  // 跳转到任务管理页面，并设置计划筛选
+  // 通过state传递计划信息，避免显示数字ID
+  const handleViewTasks = () => {
+    onCancel();
+    navigate(`/tasks?planId=${plan?.plan_id}`, {
+      state: {
+        planName: plan?.plan_name,
+      },
+    });
+  };
 
   // 计算订单需求汇总
   const { orderDemand, orderColors, orderSizes } = useMemo(() => {
@@ -128,6 +139,7 @@ export default function PlanDetailModal({
       color: string;
       layout_name: string;
       layout_id: number;
+      task_id: number;
       [size: string]: any;
     }> = [];
 
@@ -144,6 +156,7 @@ export default function PlanDetailModal({
           color: task.color,
           layout_name: layout.layout_name,
           layout_id: layout.layout_id,
+          task_id: task.task_id,
         };
 
         // 添加各尺码比例
@@ -218,13 +231,13 @@ export default function PlanDetailModal({
       {orderItems.length > 0 && (
         <>
           <Divider orientation="left">订单需求与生产计划对比</Divider>
-            <Card 
+          <Card 
             extra={
-                <Text type="secondary" style={{ fontSize: 12 }}>
-                 格式：<Text style={{ fontWeight: 'bold' }}> 需求数量 / 计划数量</Text> | 
-                 <Text style={{ color: '#52c41a', fontWeight: 'bold' }}> 绿色=满足 </Text>
-                 <Text style={{ color: '#f5222d', fontWeight: 'bold' }}> 红色=不足</Text>
-               </Text>
+              <Text type="secondary" style={{ fontSize: 12 }}>
+                格式：<Text style={{ fontWeight: 'bold' }}> 需求数量 / 计划数量</Text> | 
+                <Text style={{ color: '#52c41a', fontWeight: 'bold' }}> 绿色=满足 </Text>
+                <Text style={{ color: '#f5222d', fontWeight: 'bold' }}> 红色=不足</Text>
+              </Text>
             }
           >
             <Table
@@ -337,7 +350,19 @@ export default function PlanDetailModal({
       ) : (
         <>
           <Divider orientation="left">版型详细信息</Divider>
-          <Card size="small">
+          <Card 
+            size="small"
+            extra={
+              <Button
+                type="link"
+                size="small"
+                onClick={handleViewTasks}
+                style={{ padding: 0, height: 'auto' }}
+              >
+                查看任务
+              </Button>
+            }
+          >
             <Table
               dataSource={layoutDetailData}
               rowKey="key"
@@ -347,17 +372,17 @@ export default function PlanDetailModal({
               scroll={{ x: 'max-content' }}
               columns={[
                 {
-                  title: '颜色',
-                  dataIndex: 'color',
-                  key: 'color',
-                  width: 100,
-                  fixed: 'left' as const,
-                },
-                {
                   title: '版长',
                   dataIndex: 'layout_name',
                   key: 'layout_name',
                   width: 120,
+                  fixed: 'left' as const,
+                },
+                {
+                  title: '颜色',
+                  dataIndex: 'color',
+                  key: 'color',
+                  width: 100,
                   fixed: 'left' as const,
                 },
                 ...orderSizes.map((size) => ({

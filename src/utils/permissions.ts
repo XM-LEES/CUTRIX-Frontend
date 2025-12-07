@@ -21,8 +21,8 @@ const rolePermissionsMap: Record<UserRole, Permission[]> = {
     'user:create', 'user:read', 'user:update', 'user:delete',
   ],
   pattern_maker: [
-    // 计划、版型、任务管理
-    'plan:create', 'plan:read', 'plan:update', 'plan:publish',
+    // 计划、版型、任务管理（但不能发布计划）
+    'plan:create', 'plan:read', 'plan:update',
     'layout:create', 'layout:read', 'layout:update', 'layout:delete',
     'task:create', 'task:read', 'task:delete',
     'order:read',

@@ -17,7 +17,8 @@
 // 优化后：3 次请求
 // 性能提升约 20 倍，可支持更大数据量。
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
+import { useSearchParams, useLocation } from 'react-router-dom';
 import {
   Typography,
   Card,
@@ -29,7 +30,9 @@ import {
   Empty,
   Tag,
   Progress,
+  Button,
 } from 'antd';
+import { EyeOutlined } from '@ant-design/icons';
 import { plansApi, layoutsApi, tasksApi } from '@/api';
 import { ProductionPlan, CuttingLayout, ProductionTask } from '@/types';
 import {
@@ -38,6 +41,8 @@ import {
   TaskFilters,
   calculatePlanProgress,
   calculateLayoutProgress,
+  TaskDetailModal,
+  LayoutDetailModal,
 } from '@/components/tasks';
 
 const { Title } = Typography;
@@ -48,10 +53,32 @@ interface PlanWithTasks extends ProductionPlan {
 }
 
 export default function TasksPage() {
+  const [searchParams] = useSearchParams();
+  const location = useLocation();
   const [plansWithTasks, setPlansWithTasks] = useState<PlanWithTasks[]>([]);
   const [loading, setLoading] = useState(false);
   const [statusFilter, setStatusFilter] = useState<string | undefined>(undefined);
   const [planFilter, setPlanFilter] = useState<number | undefined>(undefined);
+  const [taskDetailModalVisible, setTaskDetailModalVisible] = useState(false);
+  const [selectedTask, setSelectedTask] = useState<ProductionTask | null>(null);
+  const [layoutDetailModalVisible, setLayoutDetailModalVisible] = useState(false);
+  const [selectedLayout, setSelectedLayout] = useState<CuttingLayout | null>(null);
+  const [selectedLayoutTasks, setSelectedLayoutTasks] = useState<ProductionTask[]>([]);
+  const urlPlanIdProcessed = useRef(false); // 标记URL参数是否已处理
+
+  // 从URL参数读取planId（仅在首次加载时）
+  useEffect(() => {
+    if (!urlPlanIdProcessed.current) {
+      const planIdParam = searchParams.get('planId');
+      if (planIdParam) {
+        const planId = parseInt(planIdParam, 10);
+        if (!isNaN(planId) && planId > 0) {
+          // 标记已处理，等待loadTasks完成后再设置
+          urlPlanIdProcessed.current = true;
+        }
+      }
+    }
+  }, [searchParams]);
 
   useEffect(() => {
     loadTasks();
@@ -98,11 +125,34 @@ export default function TasksPage() {
         };
       });
 
-      // 7. 应用筛选
+      // 7. 从URL参数读取planId（在数据加载完成后，仅设置一次）
+      const planIdParam = searchParams.get('planId');
+      let currentPlanFilter = planFilter;
+      if (planIdParam && urlPlanIdProcessed.current && !currentPlanFilter) {
+        const planId = parseInt(planIdParam, 10);
+        if (!isNaN(planId) && planId > 0) {
+          // 验证计划是否存在
+          const planExists = plansData.some((p) => p.plan_id === planId);
+          if (planExists) {
+            currentPlanFilter = planId;
+            // 标记已处理完成，避免重复设置
+            urlPlanIdProcessed.current = false;
+            // 使用setTimeout避免在loadTasks执行过程中设置state导致重复加载
+            setTimeout(() => {
+              setPlanFilter(planId);
+            }, 0);
+          } else {
+            // 如果计划不存在，重置标记
+            urlPlanIdProcessed.current = false;
+          }
+        }
+      }
+
+      // 8. 应用筛选
       let filtered = plansData;
       
-      if (planFilter) {
-        filtered = filtered.filter((p) => p.plan_id === planFilter);
+      if (currentPlanFilter) {
+        filtered = filtered.filter((p) => p.plan_id === currentPlanFilter);
       }
 
       if (statusFilter) {
@@ -121,6 +171,17 @@ export default function TasksPage() {
     } finally {
       setLoading(false);
     }
+  };
+
+  const handleViewTaskDetail = (task: ProductionTask) => {
+    setSelectedTask(task);
+    setTaskDetailModalVisible(true);
+  };
+
+  const handleViewLayoutDetail = (layout: CuttingLayout, tasks: ProductionTask[]) => {
+    setSelectedLayout(layout);
+    setSelectedLayoutTasks(tasks);
+    setLayoutDetailModalVisible(true);
   };
 
   // 任务表格列定义
@@ -180,6 +241,21 @@ export default function TasksPage() {
         return <Tag color={config.color}>{config.text}</Tag>;
       },
     },
+    {
+      title: '操作',
+      key: 'action',
+      width: 100,
+      render: (_: any, record: ProductionTask) => (
+        <Button
+          type="link"
+          size="small"
+          icon={<EyeOutlined />}
+          onClick={() => handleViewTaskDetail(record)}
+        >
+          查看详情
+        </Button>
+      ),
+    },
   ];
 
   return (
@@ -196,6 +272,7 @@ export default function TasksPage() {
             onPlanChange={setPlanFilter}
             onStatusChange={setStatusFilter}
             onRefresh={loadTasks}
+            initialPlanName={(location.state as any)?.planName}
           />
         </Col>
       </Row>
@@ -237,6 +314,7 @@ export default function TasksPage() {
                                 layout={layout}
                                 tasks={layout.tasks}
                                 progress={layoutProgress}
+                                onViewDetail={() => handleViewLayoutDetail(layout, layout.tasks)}
                               />
                             }
                           >
@@ -262,6 +340,26 @@ export default function TasksPage() {
           </Collapse>
         )}
       </Card>
+
+      <TaskDetailModal
+        open={taskDetailModalVisible}
+        onCancel={() => {
+          setTaskDetailModalVisible(false);
+          setSelectedTask(null);
+        }}
+        task={selectedTask}
+      />
+
+      <LayoutDetailModal
+        open={layoutDetailModalVisible}
+        onCancel={() => {
+          setLayoutDetailModalVisible(false);
+          setSelectedLayout(null);
+          setSelectedLayoutTasks([]);
+        }}
+        layout={selectedLayout}
+        tasks={selectedLayoutTasks}
+      />
     </div>
   );
 }

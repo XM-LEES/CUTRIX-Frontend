@@ -11,6 +11,14 @@ export const logsApi = {
   },
 
   /**
+   * 获取版型日志列表
+   */
+  listByLayout: async (layoutId: number): Promise<ProductionLog[]> => {
+    const response = await apiClient.get<ProductionLog[]>(`/layouts/${layoutId}/logs`);
+    return Array.isArray(response.data) ? response.data : [];
+  },
+
+  /**
    * 获取当前用户的日志列表
    */
   listMy: async (): Promise<ProductionLog[]> => {
