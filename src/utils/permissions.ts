@@ -21,10 +21,11 @@ const rolePermissionsMap: Record<UserRole, Permission[]> = {
     'user:create', 'user:read', 'user:update', 'user:delete',
   ],
   pattern_maker: [
-    // 计划、版型、任务管理（但不能发布计划）
-    'plan:create', 'plan:read', 'plan:update',
+    // 计划、版型管理（但不能发布计划）
+    'plan:create', 'plan:read', 'plan:update', 'plan:delete',
     'layout:create', 'layout:read', 'layout:update', 'layout:delete',
-    'task:create', 'task:read', 'task:delete',
+    // 任务创建和删除权限（用于创建/编辑计划时创建任务，但不允许查看任务管理页面）
+    'task:create', 'task:delete',
     'order:read',
   ],
   worker: [

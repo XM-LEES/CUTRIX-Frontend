@@ -98,7 +98,7 @@ function App() {
               path="logs"
               element={
                 <RequirePermission permission="log:create">
-                  <RequireRoles roles={['admin', 'manager', 'pattern_maker']}>
+                  <RequireRoles roles={['admin', 'manager']}>
                     <LogsPage />
                   </RequireRoles>
                 </RequirePermission>

@@ -25,14 +25,16 @@ export default function Sidebar() {
   const userRole = (user.role || user.Role) as any;
 
   // 根据权限动态生成菜单
-  // 仪表板对所有已登录用户可见
-  // 基础菜单（订单、任务、日志）对所有已登录用户可见
+  // 仪表板：admin 和 manager 可见，pattern_maker 和 worker 不可见
+  // 基础菜单（订单、任务、日志）根据权限显示
   // 高级菜单（计划、用户管理）根据权限显示
   const menuItems = [
     {
       key: '/',
       icon: <DashboardOutlined />,
       label: '仪表板',
+      // 仪表板：仅 admin 和 manager 可见
+      hidden: userRole !== 'admin' && userRole !== 'manager',
     },
     {
       key: '/orders',
@@ -51,13 +53,15 @@ export default function Sidebar() {
       key: '/tasks',
       icon: <BlockOutlined />,
       label: '任务管理',
-      // 任务菜单：所有已登录用户可见（worker 有 task:read 权限）
+      // 任务菜单：需要 task:read 权限（admin, manager 可见，pattern_maker 不可见）
+      hidden: !hasPermission(userRole, 'task:read'),
     },
     {
       key: '/logs',
       icon: <FileAddOutlined />,
       label: '日志记录',
-      // 日志菜单：所有已登录用户可见（worker 有 log:create 权限）
+      // 日志菜单：需要 log:create 权限（worker, admin, manager 可见，pattern_maker 不可见）
+      hidden: !hasPermission(userRole, 'log:create'),
     },
     {
       key: '/users',

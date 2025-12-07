@@ -1,5 +1,5 @@
 import { useNavigate } from 'react-router-dom';
-import { Button, Space, Popconfirm, Tag } from 'antd';
+import { Button, Space, Popconfirm } from 'antd';
 import {
   EditOutlined,
   DeleteOutlined,
@@ -36,6 +36,7 @@ export function usePlanTableColumns({
   const canFreeze = hasPermission(userRole, 'plan:freeze');
   const canDelete = hasPermission(userRole, 'plan:delete');
   const canUpdate = hasPermission(userRole, 'plan:update');
+  const isPatternMaker = userRole === 'pattern_maker';
 
   return [
     {
@@ -99,7 +100,8 @@ export function usePlanTableColumns({
               </Button>
             </Popconfirm>
           )}
-          {canUpdate && (record.status === 'in_progress' || record.status === 'completed') && (
+          {/* pattern_maker 不能修改已发布计划的备注，其他角色可以 */}
+          {canUpdate && (record.status === 'in_progress' || record.status === 'completed') && !isPatternMaker && (
             <Button
               type="link"
               icon={<FileTextOutlined />}
@@ -120,7 +122,8 @@ export function usePlanTableColumns({
               </Button>
             </Popconfirm>
           )}
-          {canDelete && (
+          {/* pattern_maker 只能删除未发布的计划，其他角色可以删除所有计划 */}
+          {canDelete && (isPatternMaker ? record.status === 'pending' : true) && (
             <Popconfirm
               title="确定要删除这个计划吗？"
               onConfirm={() => onDelete(record)}

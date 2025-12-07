@@ -55,18 +55,43 @@ export default function PlansPage() {
 
   const handleViewDetail = async (plan: ProductionPlan) => {
     try {
-      const [planDetail, layouts, allTasks, orderDetail, fullOrder] = await Promise.all([
+      const canViewTasks = hasPermission(userRole, 'task:read');
+      
+      // 并行加载计划详情、版型、订单信息
+      const [planDetail, layouts, orderDetail, fullOrder] = await Promise.all([
         plansApi.get(plan.plan_id),
         layoutsApi.listByPlan(plan.plan_id),
-        tasksApi.list(),
         ordersApi.get(plan.order_id).catch(() => null), // 订单可能不存在，静默失败
         ordersApi.getFull(plan.order_id).catch(() => null), // 获取订单和订单项
       ]);
       setPlanLayouts(layouts);
-      // 过滤出属于该计划版型的任务
-      const tasks = allTasks.filter((task) =>
-        layouts.some((layout) => layout.layout_id === task.layout_id)
-      );
+      
+      // 只有有 task:read 权限的用户才加载任务数据
+      let tasks: ProductionTask[] = [];
+      if (canViewTasks) {
+        try {
+          // 如果有权限，加载所有任务并过滤出属于该计划版型的任务
+          const allTasks = await tasksApi.list();
+          tasks = allTasks.filter((task) =>
+            layouts.some((layout) => layout.layout_id === task.layout_id)
+          );
+        } catch (error) {
+          // 如果加载任务失败，静默处理，不影响计划详情显示
+          console.warn('加载任务数据失败:', error);
+        }
+      } else {
+        // 如果没有权限，尝试通过版型逐个获取任务（使用 listByLayout，需要 layout:read 权限）
+        try {
+          const taskPromises = layouts.map((layout) =>
+            tasksApi.listByLayout(layout.layout_id).catch(() => [])
+          );
+          const tasksByLayout = await Promise.all(taskPromises);
+          tasks = tasksByLayout.flat();
+        } catch (error) {
+          // 如果也失败，任务列表为空，不影响计划详情显示
+          console.warn('通过版型加载任务失败:', error);
+        }
+      }
       setPlanTasks(tasks);
       // 保存订单信息到 selectedPlan（用于显示）
       if (orderDetail) {
@@ -211,3 +236,4 @@ export default function PlansPage() {
     </div>
   );
 }
+
