@@ -15,6 +15,7 @@ import UsersPage from '@/pages/Users';
 import WorkerDashboard from '@/pages/WorkerDashboard';
 import TaskOperation from '@/pages/TaskOperation';
 import PlanCreate from '@/pages/PlanCreate';
+import DebugPage from '@/pages/Debug';
 
 function App() {
   const { checkAuth, isAuthenticated } = useAuth();
@@ -29,6 +30,7 @@ function App() {
         <Routes>
           {/* 公开路由 */}
           <Route path="/login" element={!isAuthenticated ? <LoginPage /> : <Navigate to="/" replace />} />
+          <Route path="/debug" element={<DebugPage />} />
 
           {/* Worker 专属路由（无侧边栏布局） */}
           <Route
