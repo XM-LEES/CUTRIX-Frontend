@@ -128,7 +128,35 @@ export default function PlanDetailModal({
     return supply;
   }, [planLayouts, planTasks, layoutRatios]);
 
-  // 构建版型详细信息表格数据（类似Excel第二部分）
+  // 构建版型详细信息表格数据（版型级别）
+  const layoutSummaryData = useMemo(() => {
+    if (!planLayouts || planLayouts.length === 0) {
+      return [];
+    }
+
+    return planLayouts.map((layout) => {
+      const layoutTasks = planTasks.filter((task) => task.layout_id === layout.layout_id);
+      const ratios = layoutRatios[layout.layout_id] || {};
+      
+      // 格式化尺码比例显示
+      const ratiosText = orderSizes
+        .filter(size => ratios[size] && ratios[size] > 0)
+        .map(size => `${size}:${ratios[size]}`)
+        .join(', ') || '-';
+
+      return {
+        key: `layout-${layout.layout_id}`,
+        layout_id: layout.layout_id,
+        layout_name: layout.layout_name,
+        ratios: ratiosText,
+        ratiosObj: ratios,
+        taskCount: layoutTasks.length,
+        note: layout.note || '-',
+      };
+    });
+  }, [planLayouts, planTasks, layoutRatios, orderSizes]);
+
+  // 构建任务详细信息表格数据（任务级别）
   const layoutDetailData = useMemo(() => {
     if (!planLayouts || planLayouts.length === 0 || !planTasks || planTasks.length === 0) {
       return [];
@@ -164,11 +192,8 @@ export default function PlanDetailModal({
           row[size] = ratios[size] || 0;
         });
 
-        // 计算合计（所有尺码比例之和）
-        const total = orderSizes.reduce((sum, size) => {
-          return sum + (ratios[size] || 0);
-        }, 0);
-        row.total = total;
+        // 使用任务的计划层数（需要拉的层数）
+        row.planned_layers = task.planned_layers;
 
         data.push(row);
       });
@@ -344,66 +369,111 @@ export default function PlanDetailModal({
         </>
       )}
 
-      {/* 版型详细信息表格（类似Excel第二部分） */}
+      {/* 版型详细信息表格 */}
       {planLayouts.length === 0 ? (
         <Empty description="暂无版型" style={{ padding: 40 }} />
       ) : (
         <>
           <Divider orientation="left">版型详细信息</Divider>
-          <Card 
-            size="small"
-            extra={
-              <Button
-                type="link"
-                size="small"
-                onClick={handleViewTasks}
-                style={{ padding: 0, height: 'auto' }}
-              >
-                查看任务
-              </Button>
-            }
-          >
+          <Card size="small">
             <Table
-              dataSource={layoutDetailData}
+              dataSource={layoutSummaryData}
               rowKey="key"
               pagination={false}
               size="small"
               bordered
-              scroll={{ x: 'max-content' }}
               columns={[
                 {
-                  title: '版长',
+                  title: '版型名称',
                   dataIndex: 'layout_name',
                   key: 'layout_name',
-                  width: 120,
-                  fixed: 'left' as const,
+                  width: 150,
                 },
                 {
-                  title: '颜色',
-                  dataIndex: 'color',
-                  key: 'color',
-                  width: 100,
-                  fixed: 'left' as const,
+                  title: '尺码比例',
+                  dataIndex: 'ratios',
+                  key: 'ratios',
+                  width: 200,
+                  render: (text: string) => <Text>{text}</Text>,
                 },
-                ...orderSizes.map((size) => ({
-                  title: size,
-                  dataIndex: size,
-                  key: size,
-                  width: 80,
-                  align: 'center' as const,
-                  render: (value: number) => value || 0,
-                })),
                 {
-                  title: '合计',
-                  dataIndex: 'total',
-                  key: 'total',
+                  title: '任务数量',
+                  dataIndex: 'taskCount',
+                  key: 'taskCount',
                   width: 100,
                   align: 'center' as const,
-                  render: (value: number) => <Text strong>{value || 0}</Text>,
+                  render: (count: number) => <Text strong>{count} 个</Text>,
+                },
+                {
+                  title: '备注',
+                  dataIndex: 'note',
+                  key: 'note',
+                  ellipsis: true,
                 },
               ]}
             />
           </Card>
+
+          {/* 任务详细信息表格 */}
+          {layoutDetailData.length > 0 && (
+            <>
+              <Divider orientation="left" style={{ marginTop: 24 }}>任务详细信息</Divider>
+              <Card 
+                size="small"
+                extra={
+                  <Button
+                    type="link"
+                    size="small"
+                    onClick={handleViewTasks}
+                    style={{ padding: 0, height: 'auto' }}
+                  >
+                    查看任务
+                  </Button>
+                }
+              >
+                <Table
+                  dataSource={layoutDetailData}
+                  rowKey="key"
+                  pagination={false}
+                  size="small"
+                  bordered
+                  scroll={{ x: 'max-content' }}
+                  columns={[
+                    {
+                      title: '版长',
+                      dataIndex: 'layout_name',
+                      key: 'layout_name',
+                      width: 120,
+                      fixed: 'left' as const,
+                    },
+                    {
+                      title: '颜色',
+                      dataIndex: 'color',
+                      key: 'color',
+                      width: 100,
+                      fixed: 'left' as const,
+                    },
+                    ...orderSizes.map((size) => ({
+                      title: size,
+                      dataIndex: size,
+                      key: size,
+                      width: 80,
+                      align: 'center' as const,
+                      render: (value: number) => value || 0,
+                    })),
+                    {
+                      title: '拉布层数',
+                      dataIndex: 'planned_layers',
+                      key: 'planned_layers',
+                      width: 100,
+                      align: 'center' as const,
+                      render: (value: number) => <Text strong>{value || 0}</Text>,
+                    },
+                  ]}
+                />
+              </Card>
+            </>
+          )}
         </>
       )}
     </Modal>

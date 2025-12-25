@@ -134,15 +134,20 @@ export default function PlanCreate() {
               .filter((color) => color && color.trim() !== '')
           ));
 
-          // 获取拉布层数（从第一个任务获取，所有任务应该相同）
-          const plannedLayers = tasks.length > 0 ? tasks[0].planned_layers : 0;
+          // 构建每个颜色的层数映射
+          const colorLayers: Record<string, number> = {};
+          tasks.forEach((task) => {
+            if (task.color && task.color.trim() !== '') {
+              colorLayers[task.color] = task.planned_layers;
+            }
+          });
 
           return {
             layout_id: layout.layout_id, // 保存 layout_id 用于后续更新
             layout_name: layout.layout_name,
             note: layout.note || undefined,
             colors,
-            planned_layers: plannedLayers,
+            colorLayers,
             ratios: ratiosObj,
           };
         })
@@ -239,17 +244,20 @@ export default function PlanCreate() {
     if (!layouts) return supply;
 
     layouts.forEach((layout: any) => {
-      if (!layout || !layout.colors || layout.colors.length === 0 || !layout.planned_layers || !layout.ratios) {
+      if (!layout || !layout.colors || layout.colors.length === 0 || !layout.colorLayers || !layout.ratios) {
         return;
       }
 
-      const { colors, planned_layers } = layout;
+      const { colors, colorLayers } = layout;
 
       colors.forEach((color: string) => {
+        const layers = colorLayers[color] || 0;
+        if (layers <= 0) return;
+        
         if (!supply[color]) supply[color] = {};
         Object.entries(layout.ratios || {}).forEach(([size, ratio]: [string, any]) => {
           if (ratio && ratio > 0) {
-            supply[color][size] = (supply[color][size] || 0) + planned_layers * ratio;
+            supply[color][size] = (supply[color][size] || 0) + layers * ratio;
           }
         });
       });
@@ -316,8 +324,14 @@ export default function PlanCreate() {
               message.warning('跳过未选择颜色的排版方案');
               continue;
             }
-            if (!layoutData.planned_layers || layoutData.planned_layers <= 0) {
-              message.warning('跳过未设置拉布层数的排版方案');
+            // 验证每个颜色都有设置层数
+            const colorLayers = layoutData.colorLayers || {};
+            const hasInvalidLayers = layoutData.colors.some((color: string) => {
+              const layers = colorLayers[color];
+              return !layers || layers <= 0;
+            });
+            if (hasInvalidLayers) {
+              message.warning('跳过未完整设置各颜色拉布层数的排版方案');
               continue;
             }
             // 检查尺码比例总和是否大于0
@@ -372,10 +386,16 @@ export default function PlanCreate() {
 
               // 为每个颜色创建任务
               for (const color of layoutData.colors) {
+                const plannedLayers = layoutData.colorLayers?.[color];
+                if (!plannedLayers || plannedLayers <= 0) {
+                  message.warning(`颜色 ${color} 的拉布层数未设置，跳过`);
+                  continue;
+                }
+
                 await tasksApi.create({
                   layout_id: layoutId,
                   color: color,
-                  planned_layers: layoutData.planned_layers,
+                  planned_layers: plannedLayers,
                 });
                 createdTasks++;
               }
@@ -394,8 +414,14 @@ export default function PlanCreate() {
               message.warning('跳过未选择颜色的排版方案');
               continue;
             }
-            if (!layoutData.planned_layers || layoutData.planned_layers <= 0) {
-              message.warning('跳过未设置拉布层数的排版方案');
+            // 验证每个颜色都有设置层数
+            const colorLayers = layoutData.colorLayers || {};
+            const hasInvalidLayers = layoutData.colors.some((color: string) => {
+              const layers = colorLayers[color];
+              return !layers || layers <= 0;
+            });
+            if (hasInvalidLayers) {
+              message.warning('跳过未完整设置各颜色拉布层数的排版方案');
               continue;
             }
             // 检查尺码比例总和是否大于0
@@ -429,10 +455,16 @@ export default function PlanCreate() {
 
               // 2.3 为每个颜色创建任务
               for (const color of layoutData.colors) {
+                const plannedLayers = layoutData.colorLayers?.[color];
+                if (!plannedLayers || plannedLayers <= 0) {
+                  message.warning(`颜色 ${color} 的拉布层数未设置，跳过`);
+                  continue;
+                }
+
                 await tasksApi.create({
                   layout_id: layout.layout_id,
                   color: color,
-                  planned_layers: layoutData.planned_layers,
+                  planned_layers: plannedLayers,
                 });
                 createdTasks++;
               }
@@ -626,22 +658,13 @@ export default function PlanCreate() {
                         }
                       >
                         <Row gutter={16}>
-                          <Col span={12}>
+                          <Col span={24}>
                             <Form.Item
                               {...restField}
                               name={[name, 'layout_name']}
                               label="版型名称"
                             >
                               <Input placeholder="不填写则自动生成" />
-                            </Form.Item>
-                          </Col>
-                          <Col span={12}>
-                            <Form.Item
-                              {...restField}
-                              name={[name, 'planned_layers']}
-                              label="拉布层数"
-                            >
-                              <InputNumber min={1} placeholder="计划生产的份数" style={{ width: '100%' }} />
                             </Form.Item>
                           </Col>
                         </Row>
@@ -652,7 +675,19 @@ export default function PlanCreate() {
                               name={[name, 'colors']}
                               label="颜色 (可多选)"
                             >
-                              <Select mode="multiple" placeholder="选择此方案应用的颜色">
+                              <Select 
+                                mode="multiple" 
+                                placeholder="选择此方案应用的颜色"
+                                onChange={(selectedColors) => {
+                                  // 当颜色选择变化时，初始化或清理对应颜色的层数
+                                  const currentColorLayers = form.getFieldValue(['layouts', name, 'colorLayers']) || {};
+                                  const newColorLayers: Record<string, number> = {};
+                                  selectedColors.forEach((color: string) => {
+                                    newColorLayers[color] = currentColorLayers[color] || 0;
+                                  });
+                                  form.setFieldValue(['layouts', name, 'colorLayers'], newColorLayers);
+                                }}
+                              >
                                 {orderColors.map((c) => (
                                   <Option key={c} value={c}>
                                     {c}
@@ -662,6 +697,57 @@ export default function PlanCreate() {
                             </Form.Item>
                           </Col>
                         </Row>
+                        <Form.Item
+                          noStyle
+                          shouldUpdate={(prevValues, currentValues) => {
+                            const prevColors = prevValues?.layouts?.[name]?.colors || [];
+                            const currentColors = currentValues?.layouts?.[name]?.colors || [];
+                            return prevColors.length !== currentColors.length || 
+                                   prevColors.some((c: string, i: number) => c !== currentColors[i]);
+                          }}
+                        >
+                          {({ getFieldValue }) => {
+                            const selectedColors = getFieldValue(['layouts', name, 'colors']) || [];
+                            if (selectedColors.length === 0) {
+                              return null;
+                            }
+
+                            return (
+                              <div style={{ marginBottom: 16 }}>
+                                <Text strong style={{ display: 'block', marginBottom: 8 }}>各颜色拉布层数</Text>
+                                <Row gutter={[16, 8]}>
+                                  {selectedColors.map((color: string) => {
+                                    const colorTotal = orderItems
+                                      .filter(item => item.color === color)
+                                      .reduce((sum, item) => sum + item.quantity, 0);
+                                    
+                                    return (
+                                      <Col span={12} key={color}>
+                                        <Form.Item
+                                          {...restField}
+                                          name={[name, 'colorLayers', color]}
+                                          label={
+                                            <span>
+                                              {color}
+                                              {colorTotal > 0}
+                                            </span>
+                                          }
+                                          rules={[{ required: true, message: `请输入${color}的拉布层数` }]}
+                                        >
+                                          <InputNumber 
+                                            min={1} 
+                                            placeholder="层数" 
+                                            style={{ width: '100%' }} 
+                                          />
+                                        </Form.Item>
+                                      </Col>
+                                    );
+                                  })}
+                                </Row>
+                              </div>
+                            );
+                          }}
+                        </Form.Item>
                         <Form.Item {...restField} name={[name, 'note']} label="备注">
                           <TextArea rows={2} placeholder="版型备注（可选）" />
                         </Form.Item>
@@ -686,7 +772,7 @@ export default function PlanCreate() {
                         orderSizes.forEach(size => {
                           initialRatios[size] = 0;
                         });
-                        add({ colors: [], ratios: initialRatios });
+                        add({ colors: [], colorLayers: {}, ratios: initialRatios });
                       }}
                       block
                       icon={<PlusOutlined />}
